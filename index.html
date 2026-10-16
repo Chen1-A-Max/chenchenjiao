@@ -1,0 +1,3942 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>Dual Desktop — macOS × Win98 Simulator</title>
+<style>
+/* =====================================================================
+   RESET & BASE
+   ===================================================================== */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;user-select:none}
+button{font-family:inherit;cursor:pointer;border:none;background:none}
+input,textarea{font-family:inherit;outline:none;border:none;background:transparent}
+img{display:block}
+
+/* =====================================================================
+   GLOBAL SWITCHER (Top Tab Bar)
+   ===================================================================== */
+#os-switcher{position:fixed;top:0;left:0;right:0;height:42px;z-index:99999;display:flex;justify-content:center;align-items:center;gap:0;background:#1d1d1f;border-bottom:1px solid #000;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+#os-switcher .tab{padding:8px 22px;font-size:13px;font-weight:500;color:#b8b8b8;background:transparent;letter-spacing:.3px;transition:all .15s}
+#os-switcher .tab.active{color:#fff;background:linear-gradient(180deg,#3a3a3c,#2c2c2e);box-shadow:inset 0 -2px 0 #0a84ff}
+#os-switcher .tab:hover:not(.active){color:#fff;background:#2c2c2e}
+#os-switcher .brand{position:absolute;left:18px;color:#86868b;font-size:12px;letter-spacing:1px}
+
+/* =====================================================================
+   DESKTOP LAYERS
+   ===================================================================== */
+.desktop{position:absolute;top:42px;left:0;right:0;bottom:0;overflow:hidden;display:none}
+.desktop.active{display:block}
+
+/* ===== macOS Desktop ============================================== */
+#macos-desktop{
+  background:linear-gradient(135deg,#1e3c72 0%,#2a5298 30%,#6a3093 70%,#cb2975 100%);
+}
+#macos-desktop::after{
+  content:"";position:absolute;inset:0;
+  background:
+      radial-gradient(ellipse at 20% 80%,rgba(255,180,120,.15) 0%,transparent 50%),
+      radial-gradient(ellipse at 80% 20%,rgba(120,180,255,.2) 0%,transparent 60%);
+  pointer-events:none;
+}
+
+/* macOS Menu Bar */
+#mac-menubar{
+  position:absolute;top:0;left:0;right:0;height:26px;
+  background:rgba(20,20,20,.4);
+  backdrop-filter:blur(20px) saturate(180%);
+  -webkit-backdrop-filter:blur(20px) saturate(180%);
+  display:flex;align-items:center;padding:0 12px;font-size:13px;color:#fff;
+  z-index:10000;border-bottom:.5px solid rgba(255,255,255,.15);
+}
+#mac-menubar .apple-logo{font-size:16px;margin-right:14px;cursor:pointer;padding:2px 6px;border-radius:4px}
+#mac-menubar .apple-logo:hover{background:rgba(255,255,255,.15)}
+#mac-menubar .menu-item{padding:2px 10px;margin:0 2px;border-radius:4px;cursor:pointer;font-weight:500}
+#mac-menubar .menu-item:hover, #mac-menubar .menu-item.open{background:rgba(255,255,255,.2)}
+#mac-menubar .menu-item.app{font-weight:600}
+#mac-menubar .right-group{position:absolute;right:12px;display:flex;align-items:center;gap:14px;font-size:12px}
+#mac-menubar .right-group span{cursor:pointer;display:inline-flex;align-items:center;line-height:1}
+#mac-menubar .right-group svg{display:inline-block;vertical-align:middle}
+#mac-menubar .battery{font-size:11px}
+
+/* macOS Dropdown */
+.mac-dropdown{position:absolute;background:rgba(40,40,42,.85);backdrop-filter:blur(20px);border:.5px solid rgba(0,0,0,.4);border-radius:6px;color:#fff;font-size:13px;padding:5px 0;min-width:220px;z-index:20000;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+.mac-dropdown .dd-item{padding:5px 16px;display:flex;justify-content:space-between;align-items:center;cursor:pointer}
+.mac-dropdown .dd-item:hover{background:#0a84ff}
+.mac-dropdown .dd-item.disabled{color:#888;cursor:default}
+.mac-dropdown .dd-item.disabled:hover{background:transparent}
+.mac-dropdown .dd-sep{height:1px;background:rgba(255,255,255,.15);margin:4px 0}
+.mac-dropdown .dd-shortcut{color:#aaa;font-size:11px;margin-left:24px}
+
+/* macOS Desktop Icons */
+.mac-icon-grid{position:absolute;top:40px;right:20px;display:grid;grid-template-columns:repeat(2,90px);gap:18px 8px;z-index:50;pointer-events:auto}
+.mac-icon{position:relative;width:90px;display:flex;flex-direction:column;align-items:center;cursor:pointer;padding:6px 4px;border-radius:6px;transition:background .1s;z-index:51;pointer-events:auto;user-select:none;-webkit-user-select:none}
+.mac-icon:hover{background:rgba(255,255,255,.12)}
+.mac-icon.selected{background:rgba(255,255,255,.25)}
+.mac-icon .icon-img{width:64px;height:64px;display:flex;align-items:center;justify-content:center;margin-bottom:5px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.4))}
+.mac-icon .icon-img svg{width:64px;height:64px;display:block}
+/* SVG 符号默认填充（防止 use 引用后没有颜色） */
+.mac-icon .icon-img svg use{color:#fff;fill:currentColor}
+.mac-icon .icon-label{color:#fff;font-size:12px;text-align:center;text-shadow:0 1px 2px rgba(0,0,0,.6);max-width:90px;word-break:break-all}
+
+/* macOS Dock */
+#mac-dock{
+  position:absolute;bottom:8px;left:50%;transform:translateX(-50%);
+  background:rgba(220,220,225,.35);
+  backdrop-filter:blur(28px) saturate(180%);
+  -webkit-backdrop-filter:blur(28px) saturate(180%);
+  border:1px solid rgba(255,255,255,.3);
+  border-radius:18px;
+  padding:6px 10px;
+  display:flex;align-items:flex-end;gap:6px;
+  box-shadow:0 8px 24px rgba(0,0,0,.35),inset 0 0 0 .5px rgba(255,255,255,.2);
+  z-index:10000;
+}
+.dock-item{width:54px;height:54px;display:flex;align-items:center;justify-content:center;border-radius:12px;position:relative;cursor:pointer;transition:transform .15s}
+.dock-item:hover{transform:translateY(-10px) scale(1.15)}
+.dock-item .tooltip{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:rgba(50,50,55,.9);color:#fff;font-size:11px;padding:4px 10px;border-radius:5px;white-space:nowrap;margin-bottom:6px;opacity:0;pointer-events:none;transition:opacity .15s}
+.dock-item:hover .tooltip{opacity:1}
+/* ★ macOS Dock 最小化窗口指示：app 存在最小化窗口时，图标下方显示小圆点（点击可恢复） */
+.dock-item.has-minimized::after{
+  content:'';position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);
+  width:6px;height:6px;border-radius:50%;
+  background:rgba(255,255,255,0.95);
+  box-shadow:0 0 4px rgba(255,255,255,0.7);
+}
+.dock-sep{width:1px;height:38px;background:rgba(255,255,255,.4);margin:0 4px;align-self:center}
+
+/* ===== Window Frame (macOS) ======================================= */
+.mac-window{
+  position:absolute;
+  background:#ececec;
+  border-radius:10px;
+  box-shadow:0 20px 60px rgba(0,0,0,.45);
+  min-width:300px;min-height:200px;   /* ★ 与缩放下限 MIN_W/MIN_H 保持一致 */
+  display:flex;flex-direction:column;
+  overflow:hidden;
+  border:1px solid rgba(0,0,0,.15);
+}
+.mac-window.maximized{top:26px !important;left:0 !important;right:0 !important;bottom:0 !important;width:auto !important;height:auto !important;border-radius:0}
+.mac-titlebar{
+  height:38px;background:linear-gradient(180deg,#f6f6f6,#dcdcdc);
+  border-bottom:1px solid rgba(0,0,0,.12);
+  display:flex;align-items:center;padding:0 12px;
+  cursor:grab;flex-shrink:0;
+}
+.mac-titlebar:active{cursor:grabbing}
+.mac-titlebar .traffic-lights{display:flex;gap:8px}
+.mac-titlebar .tl{width:12px;height:12px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:8px;color:rgba(0,0,0,.55);font-weight:700}
+.mac-titlebar .tl.close{background:#ff5f57;border:1px solid #e0443e}
+.mac-titlebar .tl.min{background:#febc2e;border:1px solid #dea123}
+.mac-titlebar .tl.max{background:#28c840;border:1px solid #1aab29}
+.mac-titlebar .tl:hover{filter:brightness(1.1)}
+.mac-titlebar .tl span{opacity:0;transition:opacity .1s}
+.mac-titlebar:hover .tl span{opacity:1}
+.mac-titlebar .title{flex:1;text-align:center;font-size:13px;font-weight:600;color:#333}
+.mac-window-body{flex:1;overflow:auto;background:#fff;display:flex;flex-direction:column}
+
+/* ===== Windows 98 Desktop ========================================= */
+#win98-desktop{
+  background:#008080;
+}
+#win98-desktop::before{
+  content:"";position:absolute;inset:0;
+  background-image:
+    linear-gradient(45deg,rgba(255,255,255,.04) 25%,transparent 25%),
+    linear-gradient(-45deg,rgba(255,255,255,.04) 25%,transparent 25%);
+  background-size:8px 8px;
+  pointer-events:none;
+}
+
+.win98-icon{
+  position:absolute;
+  width:75px;display:flex;flex-direction:column;align-items:center;
+  cursor:pointer;padding:4px;z-index:50;pointer-events:auto;user-select:none;-webkit-user-select:none;
+}
+.win98-icon:hover .win98-icon-label{background:#000080;color:#fff}
+.win98-icon.selected .win98-icon-label{background:#000080;color:#fff;border:1px dotted #fff;outline:1px dotted #000080}
+.win98-icon-img{width:32px;height:32px;display:flex;align-items:center;justify-content:center;margin-bottom:4px}
+.win98-icon-img svg{width:32px;height:32px;display:block}
+/* SVG 符号默认填充 */
+.win98-icon-img svg use{color:#000;fill:currentColor}
+.win98-icon-label{font-size:11px;color:#fff;text-align:center;text-shadow:1px 1px 0 #000;padding:1px 3px;font-family:"MS Sans Serif","Microsoft Sans Serif",Tahoma,sans-serif;max-width:75px;word-break:break-all}
+
+/* Win98 Window Frame */
+.w98-window{
+  position:absolute;
+  background:#c0c0c0;
+  border-top:2px solid #fff;
+  border-left:2px solid #fff;
+  border-right:2px solid #404040;
+  border-bottom:2px solid #404040;
+  box-shadow:1px 1px 0 #000;
+  min-width:300px;min-height:200px;
+  display:flex;flex-direction:column;
+}
+.w98-window.maximized{top:0 !important;left:0 !important;right:0 !important;bottom:32px !important;width:auto !important;height:auto !important}
+
+/* ===== 窗口自由缩放手柄（透明，只提供热区 + resize 光标）============
+   .se = 右下角 16x16   .e = 右边缘 6px   .s = 底边缘 6px
+   手柄放在内容之上（z-index:9），但不遮挡视觉，仅改变鼠标光标形状。 */
+.win-rsz{position:absolute;z-index:9;background:transparent;touch-action:none}
+.win-rsz.e {top:0;right:0;width:6px;height:100%;cursor:ew-resize}
+.win-rsz.s {left:0;bottom:0;width:100%;height:6px;cursor:ns-resize}
+.win-rsz.se{right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize}
+.mac-window .win-rsz.se{border-radius:0 0 10px 0}
+/* 最大化时不显示缩放热区 */
+.mac-window.maximized .win-rsz,
+.w98-window.maximized .win-rsz{display:none}
+/* 拖拽期间禁止选中文本，避免出现蓝色选区 */
+body.wm-resizing,body.wm-resizing *{user-select:none !important;cursor:inherit}
+.w98-titlebar{
+  height:20px;background:linear-gradient(90deg,#000080,#1084d0);
+  color:#fff;font-weight:700;font-size:12px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 2px 0 4px;
+  cursor:move;
+  font-family:"MS Sans Serif","Microsoft Sans Serif",Tahoma,sans-serif;
+}
+.w98-titlebar .w98-title-text{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.w98-titlebar .w98-ctrls{display:flex;gap:0}
+.w98-btn{
+  width:18px;height:16px;background:#c0c0c0;
+  border-top:1px solid #fff;border-left:1px solid #fff;
+  border-right:1px solid #404040;border-bottom:1px solid #404040;
+  display:flex;align-items:center;justify-content:center;
+  font-family:"Marlett",monospace;font-size:11px;color:#000;
+  margin-left:2px;box-shadow:inset -1px -1px 0 #808080;
+  cursor:pointer;
+}
+.w98-btn:active{
+  border-top:1px solid #404040;border-left:1px solid #404040;
+  border-right:1px solid #fff;border-bottom:1px solid #fff;
+  box-shadow:inset 1px 1px 0 #808080;
+}
+.w98-menubar{
+  height:20px;background:#c0c0c0;
+  border-bottom:1px solid #808080;
+  display:flex;align-items:center;padding:0 2px;gap:0;
+  font-size:12px;font-family:"MS Sans Serif",Tahoma,sans-serif;flex-shrink:0;
+}
+.w98-menubar .wm-item{padding:2px 8px;cursor:pointer;color:#000}
+.w98-menubar .wm-item:hover, .w98-menubar .wm-item.open{background:#000080;color:#fff}
+.w98-window-body{flex:1;overflow:auto;background:#c0c0c0;padding:2px;display:flex;flex-direction:column}
+
+/* Win98 Taskbar */
+#w98-taskbar{
+  position:absolute;bottom:0;left:0;right:0;height:32px;
+  background:#c0c0c0;
+  border-top:2px solid #fff;
+  display:flex;align-items:center;padding:4px 4px 0;
+  z-index:10000;
+  font-family:"MS Sans Serif","Microsoft Sans Serif",Tahoma,sans-serif;
+  font-size:12px;
+}
+#w98-start-btn{
+  display:flex;align-items:center;gap:5px;padding:2px 6px;font-weight:700;font-size:13px;
+  border-top:1px solid #fff;border-left:1px solid #fff;
+  border-right:1px solid #404040;border-bottom:1px solid #404040;
+  background:#c0c0c0;height:26px;min-width:64px;
+  box-shadow:inset -1px -1px 0 #808080;
+}
+#w98-start-btn:active{
+  border-top:1px solid #404040;border-left:1px solid #404040;
+  border-right:1px solid #fff;border-bottom:1px solid #fff;
+}
+#w98-start-btn .winlogo{width:16px;height:16px;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:1px}
+#w98-start-btn .winlogo div{background:#fff}
+#w98-taskbar .w98-divider{width:1px;height:24px;background:#808080;border-right:1px solid #fff;margin:0 4px}
+#w98-tray{
+  margin-left:auto;display:flex;align-items:center;gap:6px;
+  border-top:1px solid #808080;border-left:1px solid #808080;
+  border-right:1px solid #fff;border-bottom:1px solid #fff;
+  padding:2px 8px;height:24px;background:#c0c0c0;font-size:12px;
+}
+#w98-task-list{display:flex;flex:1;gap:3px;overflow-x:auto}
+.w98-task-btn{
+  display:flex;align-items:center;gap:4px;
+  padding:2px 8px;height:26px;min-width:140px;max-width:200px;
+  border-top:1px solid #fff;border-left:1px solid #fff;
+  border-right:1px solid #404040;border-bottom:1px solid #404040;
+  background:#c0c0c0;font-size:12px;
+  box-shadow:inset -1px -1px 0 #808080;
+  cursor:pointer;
+  font-family:inherit;
+}
+.w98-task-btn.active{
+  border-top:1px solid #404040;border-left:1px solid #404040;
+  border-right:1px solid #fff;border-bottom:1px solid #fff;
+  box-shadow:inset 1px 1px 0 #808080;
+  background:#a0a0a0;
+}
+
+/* Start Menu */
+#start-menu{
+  position:absolute;bottom:32px;left:4px;width:200px;
+  background:#c0c0c0;
+  border-top:2px solid #fff;border-left:2px solid #fff;
+  border-right:2px solid #404040;border-bottom:2px solid #404040;
+  display:none;z-index:10001;flex-direction:column;
+  font-family:"MS Sans Serif",Tahoma,sans-serif;font-size:13px;
+}
+#start-menu.open{display:flex}
+#start-menu .sm-sidebar{
+  background:linear-gradient(90deg,#808080,#000080);
+  color:#fff;font-weight:700;font-size:18px;
+  padding:8px;width:24px;writing-mode:vertical-rl;
+  display:flex;align-items:center;
+}
+#start-menu .sm-body{padding:2px 0;flex:1}
+.sm-item{display:flex;align-items:center;gap:8px;padding:4px 16px 4px 6px;cursor:pointer;color:#000}
+.sm-item:hover{background:#000080;color:#fff}
+.sm-item .sm-icon{width:24px;height:24px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sm-sep{height:1px;background:#808080;border-bottom:1px solid #fff;margin:2px 1px}
+/* 开始菜单顶部：当前用户条（Win98 风格 chisel 内嵌） */
+.sm-user{
+  display:flex;align-items:center;gap:8px;padding:5px 6px;
+  background:#c0c0c0;
+  border-top:1px solid #808080;border-left:1px solid #808080;
+  border-right:1px solid #fff;border-bottom:1px solid #fff;
+  margin:3px 4px;
+}
+.sm-user-av{
+  width:28px;height:28px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  background:#000080;color:#fff;font-weight:700;font-size:15px;
+  border-top:1px solid #404040;border-left:1px solid #404040;
+  border-right:1px solid #a8a8a8;border-bottom:1px solid #a8a8a8;
+}
+.sm-user-txt{display:flex;flex-direction:column;line-height:1.25;overflow:hidden}
+.sm-user-txt b{font-size:12px;color:#000;white-space:nowrap}
+.sm-user-txt i{font-style:normal;font-size:11px;color:#404040;font-family:"Courier New",monospace;white-space:nowrap}
+
+/* Finder / Explorer common */
+.file-row{
+  display:flex;align-items:center;padding:3px 8px;gap:6px;
+  font-size:12px;cursor:pointer;border-bottom:.5px solid rgba(0,0,0,.05);
+  color:var(--accent-color,#000);
+}
+.file-row:hover{background:#e8f0ff}
+.file-row.selected{background:#0a84ff;color:#fff}
+.file-row .file-icon{width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.file-row .file-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-row .file-size{color:#888;font-size:11px}
+.file-row.selected .file-size{color:#fff}
+
+/* macOS Finder specific */
+.finder-mac{flex:1;display:flex;flex-direction:column;font-size:12px;background:#fff}
+.finder-toolbar{
+  height:38px;background:linear-gradient(180deg,#f8f8f8,#e2e2e2);
+  border-bottom:.5px solid rgba(0,0,0,.15);
+  display:flex;align-items:center;padding:0 10px;gap:8px;
+}
+.finder-toolbar .nav-btn{
+  width:24px;height:24px;border-radius:4px;display:flex;align-items:center;justify-content:center;
+    color:#555;font-size:14px;
+}
+.finder-toolbar .nav-btn:hover{background:rgba(0,0,0,.08)}
+.finder-toolbar .nav-btn.disabled{color:#ccc;pointer-events:none}
+.finder-toolbar .finder-title{font-weight:600;font-size:13px;color:#333;margin-left:4px}
+.finder-toolbar .search-box{
+  margin-left:auto;background:#fff;border:1px solid rgba(0,0,0,.2);border-radius:5px;
+  padding:3px 8px;font-size:12px;width:160px;
+}
+.finder-grid{
+  flex:1;display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));
+  gap:14px;padding:14px;overflow:auto;background:#fff;
+}
+.finder-grid-item{
+  display:flex;flex-direction:column;align-items:center;cursor:pointer;padding:6px;
+  border-radius:6px;
+}
+.finder-grid-item:hover{background:#e8f0ff}
+.finder-grid-item.selected{background:#0a84ff;color:#fff}
+.finder-grid-item .file-thumb{width:64px;height:64px;display:flex;align-items:center;justify-content:center;margin-bottom:5px}
+.finder-grid-item .file-name{font-size:12px;text-align:center;word-break:break-all;color:#333}
+.finder-grid-item.selected .file-name{color:#fff}
+.finder-statusbar{
+  height:22px;background:linear-gradient(180deg,#f0f0f0,#d8d8d8);
+  border-top:.5px solid rgba(0,0,0,.1);
+  display:flex;align-items:center;padding:0 10px;
+  font-size:11px;color:#666;
+}
+
+/* Win98 Explorer specific */
+.w98-explorer{flex:1;display:flex;flex-direction:column;font-size:12px;background:#c0c0c0}
+.w98-explorer-toolbar{
+  height:28px;display:flex;align-items:center;gap:3px;padding:2px;border-bottom:1px solid #808080;
+}
+.w98-explorer-toolbar .w98-tbtn{
+  height:22px;min-width:24px;padding:0 6px;
+  border-top:1px solid #fff;border-left:1px solid #fff;
+  border-right:1px solid #404040;border-bottom:1px solid #404040;
+  background:#c0c0c0;display:flex;align-items:center;gap:3px;
+  font-size:12px;font-family:inherit;cursor:pointer;
+  box-shadow:inset -1px -1px 0 #808080;
+}
+.w98-explorer-toolbar .w98-tbtn:active{
+  border-top:1px solid #404040;border-left:1px solid #404040;
+  border-right:1px solid #fff;border-bottom:1px solid #fff;
+}
+.w98-explorer-content{flex:1;display:flex;overflow:hidden}
+.w98-explorer-tree{
+  width:170px;background:#fff;border-top:1px solid #fff;border-left:1px solid #fff;
+  border-right:1px solid #404040;border-bottom:1px solid #404040;
+  padding:3px;overflow:auto;font-size:12px;
+}
+.w98-explorer-tree .tree-node{padding:2px 4px;cursor:pointer;display:flex;align-items:center;gap:4px}
+.w98-explorer-tree .tree-node:hover{background:#e0e0e0}
+.w98-explorer-tree .tree-node.selected{background:#000080;color:#fff}
+.w98-explorer-files{
+  flex:1;background:#fff;border-top:1px solid #fff;border-left:1px solid #fff;
+  border-right:1px solid #404040;border-bottom:1px solid #404040;
+  margin-left:3px;padding:6px;overflow:auto;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));
+  gap:8px;align-content:start;
+}
+.w98-explorer-file{
+  display:flex;flex-direction:column;align-items:center;cursor:pointer;padding:4px;
+}
+.w98-explorer-file:hover{outline:1px dotted #000}
+.w98-explorer-file.selected{background:#000080;color:#fff}
+.w98-explorer-file.selected .file-name{color:#fff}
+.w98-explorer-file .file-thumb{width:32px;height:32px;display:flex;align-items:center;justify-content:center;margin-bottom:2px}
+.w98-explorer-file .file-name{font-size:11px;text-align:center;color:#000;word-break:break-all;max-width:70px}
+.w98-statusbar{
+  height:20px;border-top:1px solid #808080;background:#c0c0c0;
+  display:flex;align-items:center;padding:0 6px;gap:6px;font-size:11px;margin-top:2px;
+}
+.w98-statusbar .stsb-fld{
+  border-top:1px solid #808080;border-left:1px solid #808080;
+  border-right:1px solid #fff;border-bottom:1px solid #fff;
+  padding:1px 4px;background:#c0c0c0;flex:1;min-width:0;
+}
+
+/* =====================================================================
+   APPS - Common Inputs
+   ===================================================================== */
+textarea,input[type=text]{background:#fff;color:#000;border:1px solid #808080;border-top-color:#404040;border-left-color:#404040;padding:2px 4px;font-family:"Lucida Console",monospace;font-size:12px}
+textarea:focus,input:focus{outline:1px dotted #000}
+
+/* macOS Input fields */
+.mac-window-body input[type=text]{background:#fff;border:1px solid rgba(0,0,0,.3);border-radius:4px;padding:4px 8px;font-size:13px}
+
+/* =====================================================================
+   PCB APP
+   ===================================================================== */
+.pcb-mon{display:flex;flex-direction:column;height:100%;
+  background:linear-gradient(180deg,rgba(40,42,48,.85),rgba(28,30,36,.92));
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  color:#e6e6e6;font-size:12px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif}
+.pcb-mon-hd{padding:10px 14px;
+  background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));
+  border-bottom:1px solid rgba(255,255,255,.08);
+  display:flex;justify-content:space-between;align-items:center}
+.pcb-mon-title{display:flex;align-items:center;gap:8px;font-weight:600;color:#fff}
+.pcb-mon-title .dot{width:8px;height:8px;border-radius:50%;background:#34c759;box-shadow:0 0 8px #34c759}
+.pcb-mon-title small{color:#8e8e93;font-weight:400;margin-left:6px;font-size:11px}
+.pcb-mon-badges{display:flex;gap:6px;align-items:center}
+.pcb-mon-badges .badge{padding:2px 8px;border-radius:10px;font-size:10px;font-family:"SF Mono","Courier New",monospace;letter-spacing:.5px}
+.pcb-mon-badges .badge.live{background:rgba(52,199,89,.18);color:#34c759;border:1px solid rgba(52,199,89,.4)}
+.pcb-mon-badges .badge.manual{background:rgba(255,159,10,.18);color:#ff9f0a;border:1px solid rgba(255,159,10,.4)}
+.pcb-mon-dash{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:12px 14px;
+  background:rgba(0,0,0,.18);border-bottom:1px solid rgba(255,255,255,.06)}
+.pcb-mon-dash .card{padding:10px 12px;
+  background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));
+  border:1px solid rgba(255,255,255,.08);border-radius:6px;
+  display:flex;flex-direction:column;gap:4px;min-height:54px}
+.pcb-mon-dash .card .label{font-size:10px;color:#8e8e93;text-transform:uppercase;letter-spacing:1px}
+.pcb-mon-dash .card .val{font-size:20px;color:#fff;font-weight:600;font-family:"SF Mono","Courier New",monospace;line-height:1.1}
+.pcb-mon-dash .card .sub{font-size:10px;color:#7d7d80}
+.pcb-mon-dash .card.cpu .val{color:#5ac8fa}
+.pcb-mon-dash .card.mem .val{color:#bf5af2}
+.pcb-mon-dash .card.mode .val{font-size:14px;letter-spacing:1px}
+.pcb-mon-dash .card.mode.live .val{color:#34c759}
+.pcb-mon-dash .card.mode.manual .val{color:#ff9f0a}
+.pcb-mon-body{flex:1;display:flex;overflow:hidden}
+.pcb-mon-list{flex:1;display:flex;flex-direction:column;overflow:hidden;border-right:1px solid rgba(255,255,255,.06)}
+.pcb-mon-list-hd{padding:8px 12px;background:rgba(255,255,255,.04);font-size:11px;color:#8e8e93;
+  letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,.06)}
+.pcb-mon-table{flex:1;overflow:auto;font-family:"SF Mono","Courier New",monospace}
+.pcb-mon-table table{width:100%;border-collapse:collapse;font-size:11px}
+.pcb-mon-table thead{position:sticky;top:0;background:rgba(28,30,36,.95);z-index:1}
+.pcb-mon-table th{padding:6px 10px;text-align:left;color:#8e8e93;font-weight:600;
+  border-bottom:1px solid rgba(255,255,255,.08);font-size:10px;letter-spacing:1px;text-transform:uppercase}
+.pcb-mon-table td{padding:6px 10px;border-bottom:1px solid rgba(255,255,255,.04);color:#e6e6e6;vertical-align:middle}
+/* USER / PC 两列：固定值，禁止换行，避免挤占主列 */
+.pcb-mon-table th.col-u,.pcb-mon-table th.col-p,
+.pcb-mon-table td.col-u,.pcb-mon-table td.col-p{white-space:nowrap}
+.pcb-mon-table td.col-u,.pcb-mon-table td.col-p{color:#9be7ff}
+.pcb-mon-table tbody tr{cursor:pointer;transition:background .15s}
+.pcb-mon-table tbody tr:hover{background:rgba(90,200,250,.08)}
+.pcb-mon-table tbody tr.sel{background:rgba(90,200,250,.18)}
+.pcb-mon-table tbody tr.sel td{color:#7df9ff}
+.pcb-mon-table .st{padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.5px;display:inline-block}
+.pcb-mon-table .st.Running{background:rgba(52,199,89,.2);color:#34c759}
+.pcb-mon-table .st.Ready{background:rgba(10,132,255,.2);color:#0a84ff}
+.pcb-mon-table .st.Blocked{background:rgba(255,159,10,.2);color:#ff9f0a}
+.pcb-mon-table .st.Terminated{background:rgba(142,142,147,.2);color:#8e8e93}
+.pcb-mon-table tbody tr.self td{background:rgba(255,214,10,.06)}
+.pcb-mon-table tbody tr.self .pid-val{color:#ffd60a;font-weight:700}
+.pcb-mon-table .empty{padding:24px 8px;color:#5a5a5e;font-size:11px;text-align:center;font-style:italic}
+.pcb-mon-detail{width:280px;background:rgba(0,0,0,.18);padding:12px;overflow:auto;
+  border-left:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column;gap:0}
+.pcb-mon-detail-hd{display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,.08)}
+.pcb-mon-detail-hd h4{margin:0;font-size:12px;color:#7df9ff;font-family:"SF Mono","Courier New",monospace}
+.pcb-mon-detail-hd .pid{font-size:10px;color:#8e8e93}
+.pcb-mon-detail .kv{display:flex;justify-content:space-between;padding:5px 0;
+  border-bottom:1px dashed rgba(255,255,255,.06);font-family:"SF Mono","Courier New",monospace;font-size:11px}
+.pcb-mon-detail .kv .key{color:#8e8e93}
+.pcb-mon-detail .kv .val{color:#e6e6e6;font-weight:600}
+.pcb-mon-detail .empty{padding:24px 8px;color:#5a5a5e;font-size:11px;text-align:center;font-style:italic;line-height:1.6}
+.pcb-mon-detail .actions{margin-top:14px;display:flex;gap:6px;flex-wrap:wrap}
+.pcb-mon-detail .actions button{padding:4px 10px;background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.12);border-radius:4px;color:#e6e6e6;font-size:11px;
+  cursor:pointer;font-family:inherit;transition:all .15s}
+.pcb-mon-detail .actions button:hover:not(:disabled){background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.2)}
+.pcb-mon-detail .actions button:disabled{opacity:.35;cursor:not-allowed}
+.pcb-mon-tbar{padding:6px 12px;background:rgba(0,0,0,.2);border-top:1px solid rgba(255,255,255,.06);
+  display:flex;gap:6px;align-items:center}
+.pcb-mon-tbar button{padding:4px 12px;background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.12);border-radius:4px;color:#e6e6e6;font-size:11px;
+  cursor:pointer;font-family:inherit;transition:all .15s}
+.pcb-mon-tbar button:hover:not(:disabled){background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.2)}
+.pcb-mon-tbar button:active:not(:disabled){background:rgba(255,255,255,.18)}
+.pcb-mon-tbar button:disabled{opacity:.35;cursor:not-allowed}
+.pcb-mon-tbar .spacer{flex:1}
+.pcb-mon-tbar .hint{font-size:10px;color:#5a5a5e;font-family:"Courier New",monospace}
+
+/* ---------- PCB Process Monitor (Win98 chiseled cards) ---------- */
+.w98-pcbmon{display:flex;flex-direction:column;height:100%;background:#c0c0c0;font-size:12px;color:#000;
+  font-family:"MS Sans Serif","Microsoft Sans Serif",Tahoma,sans-serif}
+.w98-pcbmon .titlebar{background:#000080;color:#fff;font-weight:700;font-size:12px;padding:2px 4px;
+  display:flex;align-items:center;justify-content:space-between}
+.w98-pcbmon .menubar{display:flex;gap:0;padding:2px 4px;background:#c0c0c0;border-bottom:1px solid #808080}
+.w98-pcbmon .titlebar .clock{font-weight:normal;font-family:"Courier New",monospace;font-size:11px;color:#c0c0c0}
+.w98-pcbmon .menubar span{padding:1px 6px;font-size:12px;cursor:default;color:#000}
+.w98-pcbmon .menubar span u{text-decoration:underline;color:#000}
+.w98-pcbmon .toolbar{display:flex;gap:4px;padding:4px 6px;background:#c0c0c0;border-bottom:1px solid #808080;align-items:center}
+.w98-pcbmon .toolbar button{padding:3px 10px;
+  border-top:1px solid #fff;border-left:1px solid #fff;border-right:1px solid #404040;border-bottom:1px solid #404040;
+  background:#c0c0c0;font-family:inherit;font-size:11px;cursor:pointer;min-width:64px;color:#000}
+.w98-pcbmon .toolbar button:active{
+  border-top:1px solid #404040;border-left:1px solid #404040;border-right:1px solid #fff;border-bottom:1px solid #fff}
+.w98-pcbmon .toolbar button:disabled{color:#808080;text-shadow:1px 1px 0 #fff;cursor:not-allowed}
+.w98-pcbmon .toolbar .sep{width:1px;height:20px;background:#808080;border-right:1px solid #fff;margin:0 4px}
+.w98-pcbmon-body{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:6px;gap:6px;background:#c0c0c0}
+.w98-pcbmon-dash{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.w98-pcbmon-dash .stat{background:#c0c0c0;padding:2px;border-top:1px solid #808080;border-left:1px solid #808080;
+  border-right:1px solid #fff;border-bottom:1px solid #fff}
+.w98-pcbmon-dash .stat .inner{padding:6px 8px;
+  border-top:1px solid #404040;border-left:1px solid #404040;border-right:1px solid #dfdfdf;border-bottom:1px solid #dfdfdf;
+  background:#c0c0c0;min-height:48px}
+.w98-pcbmon-dash .stat .lbl{font-size:10px;color:#404040;text-transform:uppercase;letter-spacing:1px}
+.w98-pcbmon-dash .stat .val{font-family:"Courier New",monospace;font-size:18px;font-weight:700;color:#000080;letter-spacing:.5px;line-height:1.1}
+.w98-pcbmon-dash .stat.cpu .val{color:#804000}
+.w98-pcbmon-dash .stat.mem .val{color:#008000;font-size:16px}
+.w98-pcbmon-dash .stat.mode .val{font-size:14px;color:#000}
+.w98-pcbmon-dash .stat.mode.live .val{color:#008000}
+.w98-pcbmon-dash .stat.mode.manual .val{color:#c06000}
+.w98-pcbmon-main{flex:1;display:flex;overflow:hidden;gap:6px}
+.w98-pcbmon-list{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#c0c0c0;padding:2px;
+  border-top:1px solid #808080;border-left:1px solid #808080;border-right:1px solid #fff;border-bottom:1px solid #fff}
+.w98-pcbmon-list .scroll{flex:1;overflow:auto;background:#fff;
+  border-top:1px solid #404040;border-left:1px solid #404040;border-right:1px solid #dfdfdf;border-bottom:1px solid #dfdfdf}
+.w98-pcbmon-list table{width:100%;border-collapse:collapse;font-family:"Courier New",monospace;font-size:11px;color:#000}
+.w98-pcbmon-list thead{background:#c0c0c0;position:sticky;top:0;z-index:1}
+.w98-pcbmon-list th{padding:3px 6px;text-align:left;border-right:1px solid #808080;border-bottom:1px solid #808080;
+  font-weight:700;font-size:10px;color:#000}
+.w98-pcbmon-list td{padding:3px 6px;border-right:1px solid #e0e0e0;border-bottom:1px solid #e0e0e0;vertical-align:middle}
+/* USER / PC 两列：固定值，禁止换行 */
+.w98-pcbmon-list th.col-u,.w98-pcbmon-list th.col-p,
+.w98-pcbmon-list td.col-u,.w98-pcbmon-list td.col-p{white-space:nowrap}
+.w98-pcbmon-list td.col-u,.w98-pcbmon-list td.col-p{color:#000080}
+.w98-pcbmon-list tbody tr{cursor:pointer}
+.w98-pcbmon-list tbody tr:hover{background:#e8e8ff}
+.w98-pcbmon-list tbody tr.sel{background:#000080;color:#fff}
+.w98-pcbmon-list tbody tr.sel td{color:#fff;border-right-color:#000080}
+.w98-pcbmon-list tbody tr.self td{font-weight:700;background:#ffffcc}
+.w98-pcbmon-list tbody tr.sel.self td{background:#000080;color:#ffff00}
+.w98-pcbmon-list .st{font-weight:700;font-size:10px}
+.w98-pcbmon-list .st.Running{color:#008000}
+.w98-pcbmon-list .st.Ready{color:#0000ff}
+.w98-pcbmon-list .st.Blocked{color:#c06000}
+.w98-pcbmon-list tbody tr.sel .st{color:#fff !important}
+.w98-pcbmon-list .empty{padding:30px 8px;color:#808080;font-size:11px;text-align:center;font-style:italic}
+.w98-pcbmon-detail{width:240px;background:#c0c0c0;padding:2px;display:flex;flex-direction:column;
+  border-top:1px solid #808080;border-left:1px solid #808080;border-right:1px solid #fff;border-bottom:1px solid #fff}
+.w98-pcbmon-detail .scroll{flex:1;overflow:auto;background:#fff;padding:8px;
+  border-top:1px solid #404040;border-left:1px solid #404040;border-right:1px solid #dfdfdf;border-bottom:1px solid #dfdfdf}
+.w98-pcbmon-detail h4{margin:0 0 6px 0;font-size:12px;color:#000080;font-family:"Courier New",monospace}
+.w98-pcbmon-detail .pid-tag{font-size:11px;color:#404040;font-family:"Courier New",monospace;margin-bottom:6px}
+.w98-pcbmon-detail .kv{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dotted #808080;
+  font-family:"Courier New",monospace;font-size:11px}
+.w98-pcbmon-detail .kv .key{color:#404040}
+.w98-pcbmon-detail .kv .val{color:#000;font-weight:700}
+.w98-pcbmon-detail .empty{padding:30px 8px;color:#808080;font-size:11px;text-align:center;font-style:italic;line-height:1.6}
+.w98-pcbmon-detail .actions{margin-top:10px;display:flex;gap:4px;flex-wrap:wrap}
+.w98-pcbmon-detail .actions button{padding:3px 8px;
+  border-top:1px solid #fff;border-left:1px solid #fff;border-right:1px solid #404040;border-bottom:1px solid #404040;
+  background:#c0c0c0;font-family:inherit;font-size:11px;cursor:pointer;color:#000}
+.w98-pcbmon-detail .actions button:active{
+  border-top:1px solid #404040;border-left:1px solid #404040;border-right:1px solid #fff;border-bottom:1px solid #fff}
+.w98-pcbmon-detail .actions button:disabled{color:#808080;text-shadow:1px 1px 0 #fff;cursor:not-allowed}
+.w98-pcbmon-status{padding:2px 4px;border-top:1px solid #808080;font-size:11px;background:#c0c0c0;color:#000;
+  display:flex;justify-content:space-between}
+.w98-pcbmon-status b{font-family:"Courier New",monospace;color:#000080}
+
+/* =====================================================================
+   CALCULATOR
+   ===================================================================== */
+/* ★ 修复：原 padding:14 + display min-height:90 + grid min-height:380 + 状态栏 ≈ 539px，
+   而 420 高的窗口去掉 38px 标题栏只剩 381px → 网格/按钮被裁。
+   改为全自适应：显示区固定 84px，网格 flex:1 + minmax(0,1fr) 让行高随窗口自动分配。 */
+.calc-mac{
+  padding:12px;background:linear-gradient(180deg,#2c2c2e,#1c1c1e);
+  height:100%;display:flex;flex-direction:column;color:#fff;
+  box-sizing:border-box;overflow:hidden;
+}
+.calc-mac .display{
+  background:#1c1c1e;color:#fff;font-size:44px;font-weight:300;text-align:right;
+  padding:12px 14px;border-radius:8px;margin-bottom:12px;
+  font-family:"SF Pro Display",-apple-system,sans-serif;
+  overflow:hidden;flex:0 0 84px;
+  display:flex;align-items:flex-end;justify-content:flex-end;word-break:break-all;
+  box-sizing:border-box;
+}
+.calc-mac .grid{
+  flex:1;min-height:0;
+  display:grid;grid-template-columns:repeat(4,1fr);
+  grid-template-rows:repeat(5,minmax(0,1fr));gap:8px;
+}
+.calc-mac button{
+  background:#3a3a3c;border-radius:50%;font-size:18px;font-weight:500;color:#fff;
+  transition:all .1s;
+  /* ★ 去掉固定 height:60px，改为撑满网格分配的单元格高度 */
+  width:100%;height:100%;min-height:0;padding:0;margin:0;border:none;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+}
+.calc-mac button:hover{filter:brightness(1.2)}
+.calc-mac button:active{filter:brightness(0.85)}
+.calc-mac button.fn{background:#a5a5a5;color:#000}
+.calc-mac button.op{background:#ff9500;color:#fff}
+.calc-mac button.op.active{background:#fff;color:#ff9500}
+.calc-mac button.zero{grid-column:span 2;border-radius:999px;justify-content:flex-start;padding-left:24px;text-align:left}
+
+.calc-w98{padding:6px;background:#c0c0c0;height:100%;display:flex;flex-direction:column;font-family:"MS Sans Serif",Tahoma,sans-serif}
+.calc-w98 .display-w98{
+  background:#fff;border-top:1px solid #404040;border-left:1px solid #404040;
+  border-right:1px solid #fff;border-bottom:1px solid #fff;
+  text-align:right;padding:4px 6px;font-family:"Lucida Console",monospace;
+  font-size:18px;margin-bottom:6px;min-height:28px;color:#000;
+}
+.calc-w98 .menu{font-size:12px;padding:2px 4px;border-bottom:1px solid #808080;margin-bottom:6px}
+.calc-w98 .menu span{margin-right:12px;cursor:pointer}
+.calc-w98 .menu span:hover{background:#000080;color:#fff}
+.calc-w98 .grid{flex:1;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(5,1fr);gap:3px;min-height:280px}
+.calc-w98 button.w-zero{grid-column:span 2}
+.calc-w98 button.w-eq{grid-column:span 2}
+.calc-w98 button{
+  background:#c0c0c0;
+  border-top:1px solid #fff;border-left:1px solid #fff;
+  border-right:1px solid #404040;border-bottom:1px solid #404040;
+  box-shadow:inset -1px -1px 0 #808080;
+  font-family:inherit;font-size:12px;font-weight:bold;cursor:pointer;
+  color:#000;min-height:24px;
+}
+.calc-w98 button:active{
+  border-top:1px solid #404040;border-left:1px solid #404040;
+  border-right:1px solid #fff;border-bottom:1px solid #fff;
+  box-shadow:inset 1px 1px 0 #808080;
+}
+.calc-w98 button.op{color:#a00}
+
+/* =====================================================================
+   MINESWEEPER
+   ===================================================================== */
+.mine-mac{
+  padding:14px;background:linear-gradient(180deg,#f6f6f6,#e6e6e6);height:100%;
+  display:flex;flex-direction:column;color:#333;
+  box-sizing:border-box;overflow:hidden;
+}
+.mine-mac .toolbar{
+  display:flex;justify-content:space-between;align-items:center;padding:6px 10px;
+  background:linear-gradient(180deg,#fff,#d8d8d8);border-radius:6px;margin-bottom:10px;
+  border:1px solid rgba(0,0,0,.1);
+  flex:0 0 auto;   /* ★ 工具栏不被压缩 */
+}
+.mine-mac .stat{display:flex;align-items:center;gap:6px;background:#1c1c1e;color:#ff3b30;padding:4px 10px;border-radius:4px;font-family:"Courier New",monospace;font-weight:700;font-size:18px;min-width:60px;justify-content:center}
+.mine-mac .face{font-size:24px;cursor:pointer;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid rgba(0,0,0,.2);background:#fff}
+.mine-mac .face:hover{background:#f0f0f0}
+.mine-mac .face:active{transform:scale(0.95)}
+/* ★ 修复：原 .grid 只被 render() 设了 gridTemplateColumns，没有行高；
+   而 .cell 有 aspect-ratio:1 → 行高被撑成列宽(46px)，10 行需 492px，
+   但 grid 实际只有 ~368px → 底部 3 行被裁。
+   现在：棋盘整体锁正方形 + 行列都用 minmax(0,1fr)，格子随可用空间等比缩放。 */
+.mine-mac .grid{
+  flex:1 1 auto;min-height:0;
+  aspect-ratio:1;max-width:100%;max-height:100%;
+  align-self:center;                /* 水平居中 */
+  display:grid;
+  grid-template-columns:repeat(10,minmax(0,1fr));
+  grid-template-rows:repeat(10,minmax(0,1fr));
+  gap:2px;padding:6px;background:#999;border-radius:6px;
+  box-sizing:border-box;
+}
+.mine-mac .cell{
+  background:linear-gradient(180deg,#fff,#d0d0d0);border-radius:3px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;font-weight:700;cursor:pointer;color:#000;
+  border:1px solid rgba(0,0,0,.15);
+  /* ★ 去掉 aspect-ratio:1（棋盘已是正方形，行列 1fr 自然让格子成正方） */
+  width:100%;height:100%;min-width:0;min-height:0;padding:0;margin:0;
+  transition:all .08s;
+}
+.mine-mac .cell:hover{filter:brightness(1.05)}
+.mine-mac .cell.open{background:linear-gradient(180deg,#e8e8e8,#c8c8c8);border:1px solid rgba(0,0,0,.08)}
+.mine-mac .cell.mine{background:#ff3b30;color:#fff}
+.mine-mac .cell.n1{color:#1976d2}
+.mine-mac .cell.n2{color:#388e3c}
+.mine-mac .cell.n3{color:#d32f2f}
+.mine-mac .cell.n4{color:#7b1fa2}
+.mine-mac .cell.n5{color:#ff8f00}
+.mine-mac .cell.n6{color:#00838f}
+.mine-mac .cell.n7{color:#000}
+.mine-mac .cell.n8{color:#616161}
+.mine-mac .cell.flag::after{content:"🚩"}
+.mine-mac .cell.mine::after{content:"💣"}
+.mine-mac .cell.mine.win::after{content:"✅"}
+
+.mine-w98{
+  padding:6px;background:#c0c0c0;height:100%;display:flex;flex-direction:column;
+  font-family:"MS Sans Serif",Tahoma,sans-serif;
+}
+.mine-w98 .toolbar{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:6px;border-top:2px solid #808080;border-left:2px solid #808080;
+  border-right:2px solid #fff;border-bottom:2px solid #fff;margin-bottom:6px;
+  flex:0 0 auto;   /* ★ 工具栏不被压缩 */
+}
+.mine-w98 .display-led{
+  background:#000;color:#f00;font-family:"DSEG7","Courier New",monospace;
+  font-size:18px;font-weight:700;padding:2px 6px;border:1px solid #444;
+  text-shadow:0 0 4px #f00;letter-spacing:1px;
+}
+.mine-w98 .face-w{
+  width:28px;height:28px;font-size:18px;
+  border-top:2px solid #fff;border-left:2px solid #fff;
+  border-right:2px solid #404040;border-bottom:2px solid #404040;
+  background:#c0c0c0;cursor:pointer;display:flex;align-items:center;justify-content:center;
+}
+.mine-w98 .face-w:active{
+  border-top:2px solid #404040;border-left:2px solid #404040;
+  border-right:2px solid #fff;border-bottom:2px solid #fff;
+}
+.mine-w98 .grid-w{
+  flex:1;min-height:0;display:grid;gap:0;background:#808080;padding:2px;
+  grid-template-columns:repeat(10,minmax(0,1fr));
+  grid-template-rows:repeat(10,minmax(0,1fr));
+  box-sizing:border-box;
+}
+.mine-w98 .cell-w{
+  background:#c0c0c0;border-top:2px solid #fff;border-left:2px solid #fff;
+  border-right:2px solid #404040;border-bottom:2px solid #404040;
+  display:flex;align-items:center;justify-content:center;
+  font-family:"MS Sans Serif",Tahoma,sans-serif;font-size:13px;font-weight:700;
+  cursor:pointer;color:#000;min-width:18px;min-height:18px;
+}
+.mine-w98 .cell-w.open{
+  border:1px solid #808080;background:#c0c0c0;
+}
+.mine-w98 .cell-w.mine-w{background:#f00;color:#000}
+.mine-w98 .cell-w.n1{color:#0000ff}
+.mine-w98 .cell-w.n2{color:#008000}
+.mine-w98 .cell-w.n3{color:#ff0000}
+.mine-w98 .cell-w.n4{color:#000080}
+.mine-w98 .cell-w.n5{color:#800000}
+.mine-w98 .cell-w.n6{color:#008080}
+.mine-w98 .cell-w.n7{color:#000}
+.mine-w98 .cell-w.n8{color:#808080}
+
+/* =====================================================================
+   TERMINAL
+   ===================================================================== */
+.term-mac{display:flex;flex-direction:column;height:100%;background:rgba(20,20,22,.96);color:#fff;font-family:"SF Mono","Monaco","Menlo",monospace;font-size:12px;overflow:hidden}
+.term-mac .term-title{padding:6px 12px;background:rgba(0,0,0,.4);border-bottom:1px solid rgba(255,255,255,.1);display:flex;align-items:center;gap:8px;font-size:11px;color:#aaa}
+.term-mac .term-title .dot{width:10px;height:10px;border-radius:50%}
+.term-mac .term-title .dot.r{background:#ff5f57}
+.term-mac .term-title .dot.y{background:#febc2e}
+.term-mac .term-title .dot.g{background:#28c840}
+.term-mac .term-body{flex:1;padding:12px;overflow-y:auto;line-height:1.6}
+.term-mac .term-body .ln{white-space:pre-wrap;word-break:break-all}
+.term-mac .term-body .ln.cmd{color:#7df9ff}
+.term-mac .term-body .ln.err{color:#ff7b72}
+.term-mac .term-body .ln.ok{color:#7ee787}
+.term-mac .term-body .ln.warn{color:#ffa657}
+.term-mac .term-input{padding:6px 12px;display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.3);border-top:1px solid rgba(255,255,255,.1)}
+.term-mac .term-input .prompt{color:#7df9ff}
+.term-mac .term-input input{flex:1;color:#fff;font-family:inherit;font-size:12px;background:transparent;outline:none;caret-color:#7df9ff}
+
+.term-w98{display:flex;flex-direction:column;height:100%;background:#000;color:#c0c0c0;font-family:"Lucida Console","Courier New",monospace;font-size:13px;overflow:hidden;padding:2px}
+.term-w98 .menu-w{background:#c0c0c0;color:#000;padding:1px 2px;border-bottom:1px solid #808080;font-size:12px;font-family:"MS Sans Serif",Tahoma,sans-serif;display:flex;gap:10px;margin:-2px -2px 2px -2px}
+.term-w98 .menu-w span{cursor:pointer}
+.term-w98 .menu-w span:hover{background:#000080;color:#fff}
+.term-w98 .term-body-w{flex:1;overflow-y:auto;padding:4px;line-height:1.4;background:#000}
+.term-w98 .term-body-w .ln{white-space:pre-wrap;word-break:break-all}
+.term-w98 .term-body-w .ln.cmd{color:#fff;font-weight:700}
+.term-w98 .term-body-w .ln.err{color:#f55}
+.term-w98 .term-body-w .ln.ok{color:#5f5}
+.term-w98 .term-input-w{padding:2px;display:flex;align-items:center;gap:0;background:#000}
+.term-w98 .term-input-w .prompt{color:#c0c0c0}
+.term-w98 .term-input-w input{flex:1;color:#c0c0c0;font-family:inherit;font-size:13px;background:transparent;outline:none;caret-color:#fff;padding-left:4px}
+
+/* =====================================================================
+   DIALOG
+   ===================================================================== */
+.dialog-overlay{position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:99999;display:none;align-items:center;justify-content:center}
+.dialog-overlay.open{display:flex}
+.mac-dialog{background:#ececec;border-radius:10px;padding:18px;min-width:280px;max-width:400px;box-shadow:0 20px 50px rgba(0,0,0,.5);border:1px solid rgba(0,0,0,.15)}
+.mac-dialog h3{font-size:15px;margin-bottom:8px;color:#333}
+.mac-dialog p{font-size:13px;color:#666;margin-bottom:14px;line-height:1.5}
+.mac-dialog .actions{display:flex;gap:8px;justify-content:flex-end}
+.mac-dialog button{padding:5px 18px;background:#0a84ff;color:#fff;border-radius:6px;font-size:13px;font-weight:500}
+.mac-dialog button:hover{background:#0070e0}
+.mac-dialog button.secondary{background:#e5e5ea;color:#000}
+.mac-dialog button.secondary:hover{background:#d0d0d5}
+
+.w98-dialog{background:#c0c0c0;border-top:2px solid #fff;border-left:2px solid #fff;border-right:2px solid #404040;border-bottom:2px solid #404040;min-width:320px;max-width:460px;display:flex;flex-direction:column;font-family:"MS Sans Serif",Tahoma,sans-serif}
+.w98-dialog .title{background:linear-gradient(90deg,#000080,#1084d0);color:#fff;font-weight:700;font-size:12px;padding:2px 4px;display:flex;justify-content:space-between;align-items:center}
+.w98-dialog .title .x{width:16px;height:14px;background:#c0c0c0;color:#000;border-top:1px solid #fff;border-left:1px solid #fff;border-right:1px solid #404040;border-bottom:1px solid #404040;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:"Marlett"}
+.w98-dialog .body{padding:14px;font-size:13px;line-height:1.5;color:#000}
+.w98-dialog .actions{padding:6px;display:flex;justify-content:center;gap:6px}
+.w98-dialog button{padding:4px 14px;background:#c0c0c0;border-top:1px solid #fff;border-left:1px solid #fff;border-right:1px solid #404040;border-bottom:1px solid #404040;box-shadow:inset -1px -1px 0 #808080;font-family:inherit;font-size:12px;cursor:pointer;min-width:70px}
+.w98-dialog button:active{border-top:1px solid #404040;border-left:1px solid #404040;border-right:1px solid #fff;border-bottom:1px solid #fff;box-shadow:inset 1px 1px 0 #808080}
+
+/* "功能开发中" 提示 */
+.tip-toast{
+  position:fixed;top:60px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,.85);color:#fff;padding:10px 20px;border-radius:8px;
+  font-size:13px;z-index:999999;opacity:0;transition:opacity .25s;pointer-events:none;
+}
+.tip-toast.show{opacity:1}
+
+/* Scrollbar style */
+.mac-window-body::-webkit-scrollbar{width:10px;height:10px}
+.mac-window-body::-webkit-scrollbar-thumb{background:rgba(0,0,0,.3);border-radius:5px}
+.mac-window-body::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+
+<!-- OS Switcher -->
+<div id="os-switcher">
+  <span class="brand">DUAL-DESKTOP · v1.0</span>
+  <button class="tab active" data-os="macos">macOS</button>
+  <button class="tab" data-os="win98">Windows 98</button>
+</div>
+
+<!-- ============================================================ -->
+<!-- macOS DESKTOP                                                  -->
+<!-- ============================================================ -->
+<div id="macos-desktop" class="desktop active">
+  <!-- Menu Bar -->
+  <div id="mac-menubar">
+    <span class="apple-logo" id="mac-apple" aria-label="Apple menu">
+      <!-- ★ 修复：原为空 span，无内容 → 看不见。改为内联 SVG -->
+      <svg viewBox="0 0 16 17" height="17" width="16" style="display:block;fill:#fff">
+        <path d="M11.7 8.6c0-2 1.6-3 1.7-3-0.9-1.3-2.4-1.5-2.9-1.5-1.2-0.1-2.4 0.7-3 0.7-0.6 0-1.6-0.7-2.6-0.7-1.3 0-2.6 0.8-3.3 2-1.4 2.4-0.4 6 1 8 0.7 1 1.5 2 2.6 2 1 0 1.4-0.7 2.7-0.7 1.2 0 1.6 0.7 2.7 0.7 1.1 0 1.8-1 2.5-2 0.8-1.1 1.1-2.2 1.1-2.3-0.1 0-2.5-0.9-2.5-3.2zM9.7 2.7c0.6-0.7 0.9-1.6 0.8-2.5-0.8 0-1.7 0.5-2.3 1.2-0.5 0.6-1 1.6-0.8 2.5 0.9 0 1.8-0.5 2.3-1.2z"/>
+      </svg>
+    </span>
+    <span class="menu-item app" data-app="finder">访达</span>
+    <span class="menu-item" data-menu="file">文件</span>
+    <span class="menu-item" data-menu="edit">编辑</span>
+    <span class="menu-item" data-menu="view">显示</span>
+    <span class="menu-item" data-menu="go">前往</span>
+    <span class="menu-item" data-menu="window">窗口</span>
+    <span class="menu-item" data-menu="help">帮助</span>
+    <div class="right-group">
+      <!-- ★ 修复：原 🔋📶🌐🔍 emoji 在 Windows 上依赖 Segoe UI Emoji 字体，否则看不见。改为内联 SVG + 文本 -->
+      <span id="mac-battery" title="电池 87%">
+        <svg viewBox="0 0 22 12" width="22" height="12" style="display:inline-block;vertical-align:middle;margin-right:3px">
+          <rect x="0.5" y="0.5" width="18" height="11" rx="1.5" fill="none" stroke="#fff" stroke-width="1"/>
+          <rect x="2" y="2" width="14" height="8" fill="#fff"/>
+          <rect x="19.5" y="3.5" width="2" height="5" rx="0.5" fill="#fff"/>
+        </svg>87%
+      </span>
+      <span id="mac-wifi" title="Wi-Fi: 已连接">
+        <svg viewBox="0 0 16 12" width="16" height="12" style="display:inline-block;vertical-align:middle;fill:#fff">
+          <path d="M8 11.5a1.2 1.2 0 100-2.4 1.2 1.2 0 000 2.4zM4 7.7a5.6 5.6 0 018 0l-1.4 1.4a3.6 3.6 0 00-5.2 0L4 7.7zM1.2 4.9a10 10 0 0113.6 0l-1.4 1.4a8 8 0 00-10.8 0l-1.4-1.4z"/>
+        </svg>
+      </span>
+      <span id="mac-search" title="Spotlight 搜索">
+        <svg viewBox="0 0 16 16" width="16" height="16" style="display:inline-block;vertical-align:middle;fill:none;stroke:#fff;stroke-width:1.5">
+          <circle cx="7" cy="7" r="5"/>
+          <line x1="11" y1="11" x2="15" y2="15"/>
+        </svg>
+      </span>
+      <span id="mac-user" title="当前用户">
+        <svg viewBox="0 0 16 16" width="15" height="15" style="display:inline-block;vertical-align:middle;margin-right:4px;fill:#fff">
+          <circle cx="8" cy="5.5" r="3"/>
+          <path d="M2.5 15c0-3.3 2.5-5.5 5.5-5.5S13.5 11.7 13.5 15z"/>
+        </svg><span id="mac-user-name">--</span>
+      </span>
+      <span id="mac-clock">--:--</span>
+    </div>
+  </div>
+
+  <!-- Desktop icons -->
+  <div class="mac-icon-grid" id="mac-desktop-icons"></div>
+
+  <!-- Dock -->
+  <div id="mac-dock"></div>
+</div>
+
+<!-- ============================================================ -->
+<!-- WIN98 DESKTOP                                                  -->
+<!-- ============================================================ -->
+<div id="win98-desktop" class="desktop">
+  <!-- Desktop icons -->
+  <div id="w98-desktop-icons"></div>
+
+  <!-- Start Menu -->
+  <div id="start-menu">
+    <div class="sm-body">
+      <div class="sm-user">
+        <span class="sm-user-av" id="sm-user-av">用</span>
+        <span class="sm-user-txt">
+          <b id="sm-user-full">--</b>
+          <i id="sm-user-name">--</i>
+        </span>
+      </div>
+      <div class="sm-sep"></div>
+      <div class="sm-item" data-app="finder"><span class="sm-icon" id="smi-explorer"></span>资源管理器</div>
+      <div class="sm-item" data-app="calc"><span class="sm-icon" id="smi-calc"></span>计算器</div>
+      <div class="sm-item" data-app="paint"><span class="sm-icon" id="smi-paint"></span>画图</div>
+      <div class="sm-item" data-app="mine"><span class="sm-icon" id="smi-mine"></span>扫雷</div>
+      <div class="sm-item" data-app="term"><span class="sm-icon" id="smi-term"></span>MS-DOS 提示符</div>
+      <div class="sm-item" data-app="pcb"><span class="sm-icon" id="smi-pcb"></span>PCB 监控</div>
+      <div class="sm-sep"></div>
+      <div class="sm-item" data-menu-action="settings"><span class="sm-icon">⚙️</span>设置</div>
+      <div class="sm-item" data-menu-action="about"><span class="sm-icon">ℹ️</span>关于</div>
+      <div class="sm-sep"></div>
+      <div class="sm-item" data-menu-action="switch">⏻ 切换到 macOS</div>
+    </div>
+    <div class="sm-sidebar">Windows 98</div>
+  </div>
+
+  <!-- Taskbar -->
+  <div id="w98-taskbar">
+    <button id="w98-start-btn">
+      <div class="winlogo"><div></div><div></div><div></div><div></div></div>
+      <span>开始</span>
+    </button>
+    <div class="w98-divider"></div>
+    <div id="w98-task-list"></div>
+    <div id="w98-tray">
+      <span id="w98-clock">--:--</span>
+    </div>
+  </div>
+</div>
+
+<!-- Dialog overlay -->
+<div class="dialog-overlay" id="dialog-overlay"></div>
+<div class="tip-toast" id="tip-toast"></div>
+
+<!-- ============================================================ -->
+<!-- SVG ICONS LIBRARY (inline so we don't need external assets)  -->
+<!-- ============================================================ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-finder" viewBox="0 0 64 64">
+      <defs><linearGradient id="finderG" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#1FB6FF"/><stop offset="1" stop-color="#0076D6"/></linearGradient></defs>
+      <rect x="6" y="6" width="52" height="52" rx="10" fill="url(#finderG)"/>
+      <ellipse cx="32" cy="24" rx="11" ry="11" fill="#fff"/>
+      <path d="M14 36 Q32 30 50 36 L46 56 Q32 60 18 56 Z" fill="#fff"/>
+      <circle cx="38" cy="22" r="2" fill="#000"/>
+    </symbol>
+    <symbol id="i-mac-harddisk" viewBox="0 0 64 64">
+      <rect x="6" y="14" width="52" height="36" rx="6" fill="#cdcdd0" stroke="#888" stroke-width="1"/>
+      <rect x="10" y="20" width="44" height="24" rx="2" fill="#222"/>
+      <rect x="12" y="22" width="40" height="20" fill="#001f3f"/>
+      <text x="32" y="36" fill="#7df9ff" font-family="monospace" font-size="9" text-anchor="middle">macOS</text>
+    </symbol>
+    <symbol id="i-mac-folder" viewBox="0 0 64 64">
+      <path d="M6 18 L26 18 L30 14 L58 14 L58 50 L6 50 Z" fill="#5fb0ff"/>
+      <path d="M6 22 L58 22 L58 50 L6 50 Z" fill="#7ec0ff"/>
+    </symbol>
+    <!-- Documents 文件夹：黄色 -->
+    <symbol id="i-mac-folder-docs" viewBox="0 0 64 64">
+      <path d="M6 18 L26 18 L30 14 L58 14 L58 50 L6 50 Z" fill="#f4b942"/>
+      <path d="M6 22 L58 22 L58 50 L6 50 Z" fill="#ffd166"/>
+      <line x1="14" y1="32" x2="50" y2="32" stroke="#fff" stroke-width="1.5"/>
+      <line x1="14" y1="38" x2="50" y2="38" stroke="#fff" stroke-width="1.5"/>
+      <line x1="14" y1="44" x2="40" y2="44" stroke="#fff" stroke-width="1.5"/>
+    </symbol>
+    <!-- Applications 文件夹：紫色 + A 标 -->
+    <symbol id="i-mac-folder-app" viewBox="0 0 64 64">
+      <path d="M6 18 L26 18 L30 14 L58 14 L58 50 L6 50 Z" fill="#7d5fff"/>
+      <path d="M6 22 L58 22 L58 50 L6 50 Z" fill="#9b80ff"/>
+      <text x="32" y="42" text-anchor="middle" fill="#fff" font-size="20" font-weight="700" font-family="sans-serif">A</text>
+    </symbol>
+    <!-- Downloads 文件夹：绿色 + 向下箭头 -->
+    <symbol id="i-mac-folder-dl" viewBox="0 0 64 64">
+      <path d="M6 18 L26 18 L30 14 L58 14 L58 50 L6 50 Z" fill="#34c759"/>
+      <path d="M6 22 L58 22 L58 50 L6 50 Z" fill="#5dd87a"/>
+      <path d="M32 28 L32 42 M26 36 L32 42 L38 36" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <!-- 图片文件图标 -->
+    <symbol id="i-mac-img" viewBox="0 0 64 64">
+      <rect x="10" y="14" width="44" height="36" rx="4" fill="#fff" stroke="#888"/>
+      <circle cx="22" cy="26" r="4" fill="#ffd166"/>
+      <path d="M14 46 L24 36 L34 42 L44 32 L50 38 L50 50 L14 50 Z" fill="#5fb0ff"/>
+    </symbol>
+    <!-- Word 文档图标 -->
+    <symbol id="i-mac-doc" viewBox="0 0 64 64">
+      <path d="M14 6 L42 6 L54 18 L54 58 L14 58 Z" fill="#2b579a"/>
+      <path d="M42 6 L42 18 L54 18 Z" fill="#1e3f6f"/>
+      <text x="34" y="42" text-anchor="middle" fill="#fff" font-size="20" font-weight="700" font-family="sans-serif">W</text>
+    </symbol>
+    <!-- 画图应用图标：调色板 -->
+    <symbol id="i-mac-paint" viewBox="0 0 64 64">
+      <path d="M32 6 C46 6 56 16 56 28 C56 38 48 42 42 42 C36 42 36 50 36 54 C36 58 32 60 28 58 C16 54 8 42 8 28 C8 16 18 6 32 6 Z" fill="#fff" stroke="#888"/>
+      <circle cx="22" cy="22" r="4" fill="#ff3b30"/>
+      <circle cx="36" cy="18" r="4" fill="#ff9500"/>
+      <circle cx="46" cy="26" r="4" fill="#ffcc00"/>
+      <circle cx="40" cy="34" r="4" fill="#34c759"/>
+    </symbol>
+    <symbol id="i-mac-app" viewBox="0 0 64 64">
+      <rect x="6" y="6" width="52" height="52" rx="12" fill="#5856d6"/>
+      <text x="32" y="40" text-anchor="middle" fill="#fff" font-size="24" font-weight="700" font-family="sans-serif">A</text>
+    </symbol>
+    <symbol id="i-mac-dmg" viewBox="0 0 64 64">
+      <ellipse cx="32" cy="40" rx="22" ry="10" fill="#fff" stroke="#aaa"/>
+      <ellipse cx="32" cy="40" rx="22" ry="10" fill="none" stroke="#888"/>
+      <rect x="14" y="30" width="6" height="12" fill="#bbb"/>
+      <rect x="44" y="30" width="6" height="12" fill="#bbb"/>
+    </symbol>
+    <symbol id="i-mac-txt" viewBox="0 0 64 64">
+      <path d="M14 6 L42 6 L54 18 L54 58 L14 58 Z" fill="#fff" stroke="#bbb"/>
+      <path d="M42 6 L42 18 L54 18" fill="#e0e0e0" stroke="#bbb"/>
+      <line x1="20" y1="28" x2="46" y2="28" stroke="#666"/>
+      <line x1="20" y1="34" x2="46" y2="34" stroke="#666"/>
+      <line x1="20" y1="40" x2="40" y2="40" stroke="#666"/>
+      <line x1="20" y1="46" x2="44" y2="46" stroke="#666"/>
+    </symbol>
+    <symbol id="i-mac-img" viewBox="0 0 64 64">
+      <rect x="6" y="10" width="52" height="44" rx="3" fill="#ffd966"/>
+      <circle cx="20" cy="22" r="4" fill="#fff"/>
+      <path d="M6 50 L26 36 L40 44 L58 14 L58 54 L6 54 Z" fill="#7e57c2"/>
+    </symbol>
+    <symbol id="i-mac-calc" viewBox="0 0 64 64">
+      <rect x="10" y="6" width="44" height="52" rx="6" fill="#222"/>
+      <rect x="14" y="10" width="36" height="10" rx="2" fill="#5dbf60"/>
+      <g fill="#3a3a3c">
+        <rect x="14" y="24" width="8" height="8" rx="2"/><rect x="24" y="24" width="8" height="8" rx="2"/>
+        <rect x="34" y="24" width="8" height="8" rx="2"/><rect x="44" y="24" width="6" height="8" rx="2"/>
+        <rect x="14" y="34" width="8" height="8" rx="2"/><rect x="24" y="34" width="8" height="8" rx="2"/>
+        <rect x="34" y="34" width="8" height="8" rx="2"/><rect x="44" y="34" width="6" height="8" rx="2"/>
+        <rect x="14" y="44" width="8" height="8" rx="2"/><rect x="24" y="44" width="8" height="8" rx="2"/>
+        <rect x="34" y="44" width="8" height="8" rx="2"/><rect x="44" y="44" width="6" height="8" rx="2"/>
+      </g>
+    </symbol>
+    <symbol id="i-mac-mine" viewBox="0 0 64 64">
+      <rect x="4" y="4" width="56" height="56" rx="6" fill="#444"/>
+      <rect x="8" y="8" width="48" height="48" rx="3" fill="#3a8d3e"/>
+      <circle cx="32" cy="32" r="12" fill="#000"/>
+      <circle cx="28" cy="29" r="2" fill="#fff"/>
+      <rect x="32" y="14" width="2" height="6" fill="#000"/>
+    </symbol>
+    <symbol id="i-mac-term" viewBox="0 0 64 64">
+      <rect x="4" y="6" width="56" height="52" rx="6" fill="#222"/>
+      <rect x="8" y="10" width="48" height="44" rx="3" fill="#000"/>
+      <text x="12" y="22" fill="#7df9ff" font-family="monospace" font-size="9">$ _</text>
+      <text x="10" y="34" fill="#fff" font-family="monospace" font-size="7.5">chenyanjiao</text>
+    </symbol>
+    <symbol id="i-mac-pcb" viewBox="0 0 64 64">
+      <rect x="4" y="14" width="56" height="36" rx="2" fill="#0d4a2c"/>
+      <rect x="9" y="22" width="10" height="20" fill="#1a1a1a"/>
+      <rect x="22" y="28" width="6" height="8" fill="#caa55a"/>
+      <circle cx="40" cy="32" r="4" fill="#ff3030"/>
+      <circle cx="50" cy="32" r="3" fill="#3e5cc6"/>
+      <path d="M9 32 L60 32" stroke="#caa55a" stroke-width="1"/>
+    </symbol>
+
+    <!-- Win98 icons (truncated 2-color) -->
+    <symbol id="i-w98-mycomputer" viewBox="0 0 32 32">
+      <rect x="4" y="6" width="24" height="20" fill="#c0c0c0"/>
+      <rect x="6" y="8" width="20" height="14" fill="#000080"/>
+      <text x="16" y="18" fill="#fff" font-size="8" text-anchor="middle" font-family="monospace">PC</text>
+    </symbol>
+    <symbol id="i-w98-folder" viewBox="0 0 32 32">
+      <path d="M2 10 L12 10 L14 8 L30 8 L30 26 L2 26 Z" fill="#ffcc00" stroke="#806000"/>
+      <rect x="2" y="12" width="28" height="14" fill="#ffcc00" stroke="#806000"/>
+    </symbol>
+    <symbol id="i-w98-folder-open" viewBox="0 0 32 32">
+      <path d="M2 12 L12 12 L14 10 L30 10 L26 24 L2 24 Z" fill="#ffe680" stroke="#806000"/>
+      <path d="M2 14 L28 14 L24 22 L2 22 Z" fill="#fff5b3" stroke="#806000"/>
+    </symbol>
+    <symbol id="i-w98-exe" viewBox="0 0 32 32">
+      <rect x="6" y="4" width="20" height="24" fill="#c0c0c0" stroke="#000"/>
+      <rect x="9" y="9" width="14" height="10" fill="#000080"/>
+      <rect x="9" y="20" width="14" height="4" fill="#c0c0c0" stroke="#000"/>
+      <text x="16" y="16" fill="#fff" font-size="6" text-anchor="middle" font-family="monospace">.EXE</text>
+    </symbol>
+    <symbol id="i-w98-txt" viewBox="0 0 32 32">
+      <path d="M7 3 L21 3 L25 7 L25 29 L7 29 Z" fill="#fff" stroke="#000"/>
+      <path d="M21 3 L21 7 L25 7" fill="#c0c0c0" stroke="#000"/>
+      <line x1="10" y1="13" x2="22" y2="13" stroke="#000"/>
+      <line x1="10" y1="17" x2="22" y2="17" stroke="#000"/>
+      <line x1="10" y1="21" x2="18" y2="21" stroke="#000"/>
+    </symbol>
+    <symbol id="i-w98-calc" viewBox="0 0 32 32">
+      <rect x="6" y="3" width="20" height="26" fill="#c0c0c0" stroke="#000"/>
+      <rect x="8" y="5" width="16" height="6" fill="#a0e0a0" stroke="#000"/>
+      <g fill="#c0c0c0" stroke="#000">
+        <rect x="8" y="13" width="3.5" height="3"/><rect x="12" y="13" width="3.5" height="3"/><rect x="16" y="13" width="3.5" height="3"/><rect x="20.5" y="13" width="3" height="3"/>
+        <rect x="8" y="17" width="3.5" height="3"/><rect x="12" y="17" width="3.5" height="3"/><rect x="16" y="17" width="3.5" height="3"/><rect x="20.5" y="17" width="3" height="3"/>
+        <rect x="8" y="21" width="3.5" height="3"/><rect x="12" y="21" width="3.5" height="3"/><rect x="16" y="21" width="3.5" height="3"/><rect x="20.5" y="21" width="3" height="3"/>
+        <rect x="8" y="25" width="7.5" height="3"/><rect x="16" y="25" width="3.5" height="3"/>
+      </g>
+    </symbol>
+    <symbol id="i-w98-mine" viewBox="0 0 32 32">
+      <rect x="2" y="4" width="28" height="24" fill="#c0c0c0" stroke="#000"/>
+      <rect x="4" y="6" width="24" height="20" fill="#3a8d3e" stroke="#000"/>
+      <circle cx="16" cy="18" r="6" fill="#000"/>
+      <rect x="15" y="9" width="2" height="4" fill="#000"/>
+    </symbol>
+    <symbol id="i-w98-term" viewBox="0 0 32 32">
+      <rect x="2" y="4" width="28" height="24" fill="#c0c0c0" stroke="#000"/>
+      <rect x="4" y="6" width="24" height="20" fill="#000"/>
+      <text x="6" y="13" fill="#fff" font-family="monospace" font-size="6">C:\&gt;</text>
+      <text x="6" y="20" fill="#fff" font-family="monospace" font-size="6">_</text>
+    </symbol>
+    <symbol id="i-w98-pcb" viewBox="0 0 32 32">
+      <rect x="2" y="8" width="28" height="18" fill="#0d4a2c" stroke="#000"/>
+      <rect x="4" y="12" width="6" height="10" fill="#1a1a1a"/>
+      <rect x="11" y="14" width="3" height="6" fill="#caa55a"/>
+      <circle cx="20" cy="17" r="2" fill="#ff3030"/>
+      <circle cx="25" cy="17" r="1.5" fill="#3e5cc6"/>
+    </symbol>
+    <symbol id="i-w98-recycle" viewBox="0 0 32 32">
+      <path d="M10 8 L22 8 L24 26 L8 26 Z" fill="#c0c0c0" stroke="#000"/>
+      <line x1="6" y1="8" x2="26" y2="8" stroke="#000" stroke-width="2"/>
+      <rect x="13" y="4" width="6" height="4" fill="#c0c0c0" stroke="#000"/>
+      <path d="M11 7 L11 11 M14 7 L14 11 M17 7 L17 11 M20 7 L20 11" stroke="#000"/>
+    </symbol>
+    <symbol id="i-w98-doc" viewBox="0 0 32 32">
+      <path d="M6 3 L20 3 L26 9 L26 29 L6 29 Z" fill="#fff" stroke="#000"/>
+      <path d="M20 3 L20 9 L26 9" fill="#c0c0c0" stroke="#000"/>
+      <text x="16" y="20" font-size="6" text-anchor="middle" font-family="monospace">DOC</text>
+    </symbol>
+    <symbol id="i-w98-bat" viewBox="0 0 32 32">
+      <rect x="6" y="8" width="18" height="14" fill="#000"/>
+      <rect x="24" y="12" width="2" height="6" fill="#000"/>
+      <text x="15" y="11" fill="#0f0" font-family="monospace" font-size="5">DOS</text>
+    </symbol>
+    <symbol id="i-w98-help" viewBox="0 0 32 32">
+      <rect x="4" y="4" width="24" height="24" fill="#fff" stroke="#000"/>
+      <text x="16" y="22" text-anchor="middle" font-size="18" font-weight="bold" fill="#0000ff" font-family="serif">?</text>
+    </symbol>
+    <symbol id="i-w98-paint" viewBox="0 0 32 32">
+      <ellipse cx="16" cy="20" rx="10" ry="8" fill="#fff" stroke="#000"/>
+      <circle cx="11" cy="14" r="2" fill="#ff0000"/>
+      <circle cx="16" cy="11" r="2" fill="#00aa00"/>
+      <circle cx="21" cy="14" r="2" fill="#0000ff"/>
+      <circle cx="14" cy="19" r="1.5" fill="#ffff00"/>
+      <circle cx="19" cy="20" r="1.5" fill="#ff8800"/>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- =====================================================================
+   JAVASCRIPT
+   ===================================================================== -->
+<script>
+"use strict";
+
+/* ----- Utilities ----- */
+const $ = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+const el = (tag, attrs={}, ...kids)=>{
+  // ★ 关键修复：svg 必须用 createElementNS 创建，否则得到 HTMLUnknownElement，
+  //   内部的 <use>/<rect>/<path> 全部落在 HTML 命名空间，浏览器不渲染 → Dock 图标全透明
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const e = (tag==='svg') ? document.createElementNS(SVG_NS, 'svg') : document.createElement(tag);
+  // 事件名白名单：兼容 dblclick / click / mouse* / key* / input / change / focus / blur 等
+  const EVENT_NAMES = new Set(['click','dblclick','mousedown','mouseup','mousemove','mouseover','mouseout','mouseenter','mouseleave',
+    'keydown','keyup','keypress','input','change','focus','blur','submit','reset','load','error','select','resize','scroll','contextmenu','wheel','touchstart','touchend','touchmove']);
+  Object.entries(attrs).forEach(([k,v])=>{
+    if(k==='class') e.className=v;
+    else if(k==='style') e.style.cssText=v;
+    // ★ 关键修复：innerHTML/textContent/innerText 必须走 IDL 赋值，setAttribute 对 SVG 无效
+    else if(k==='innerHTML' || k==='innerText' || k==='textContent') e[k] = v;
+    else if(k.startsWith('on')) e[k.toLowerCase()] = v;  // onclick / ondblclick
+    else if(EVENT_NAMES.has(k.toLowerCase())) e['on'+k.toLowerCase()] = v;  // dblclick / click → ondblclick / onclick
+    else if(v===true) e.setAttribute(k,'');
+    else if(v===false||v==null) {} // 跳过
+    else e.setAttribute(k,v);
+  });
+  kids.flat().forEach(k=>{
+    if(k==null) return;
+    e.append(k.nodeType?k:document.createTextNode(k));
+  });
+  return e;
+};
+const uid = ()=>Math.random().toString(36).slice(2,9);
+
+/* ============================================================
+   当前登录用户（全局单一数据源）
+   终端提示符 / whoami / 家目录 / 托盘 / 开始菜单 全部引用这里
+   ============================================================ */
+const USER = {
+  name:   'chenyanjiao',   // 用户名
+  full:   '陈艳娇',         // 显示名（中文）
+  macHost:'mac',           // macOS 主机名
+  winHost:'WIN98',         // Windows 主机名
+  home:   '/Users/chenyanjiao',
+  winHome:'C:\\WINDOWS\\Desktop'
+};
+const WHOAMI = ()=>USER.name;
+// ★ App 内部定时器注册表：builder 里用 appInterval(proc, fn, ms) 代替裸 setInterval，
+//   进程终止（窗口关闭）时由 PM.terminate 统一清理，避免关窗后 interval 仍在跑（僵尸计时器泄漏）。
+const appInterval = (proc, fn, ms)=>{
+  const t = setInterval(fn, ms);
+  (proc._timers = proc._timers || []).push(t);
+  return t;
+};
+const showTip = (msg, ms=1500)=>{
+  const t = $('#tip-toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._t);
+  t._t = setTimeout(()=>t.classList.remove('show'), ms);
+};
+
+/* ===================================================================
+   FILESYSTEM DATA
+   =================================================================== */
+const FS = {
+  macos: {
+    name: 'Macintosh HD',
+    icon: 'i-mac-harddisk',
+    children: [
+      { type:'folder', name:'Applications', icon:'i-mac-folder-app', children:[
+        { type:'app', name:'Process Monitor.app', icon:'i-mac-pcb', app:'pcb' },
+        { type:'app', name:'Calculator.app', icon:'i-mac-calc', app:'calc' },
+        { type:'app', name:'Minesweeper.app', icon:'i-mac-mine', app:'mine' },
+        { type:'app', name:'Terminal.app', icon:'i-mac-term', app:'term' },
+        { type:'app', name:'Paint.app', icon:'i-mac-paint', app:'paint' },
+        { type:'app', name:'Finder.app', icon:'i-finder', app:'finder' },
+      ]},
+      { type:'folder', name:'Documents', icon:'i-mac-folder-docs', children:[
+        { type:'file', name:'README.txt', icon:'i-mac-txt', size:'2 KB' },
+        { type:'file', name:'简历.docx', icon:'i-mac-doc', size:'24 KB' },
+        { type:'file', name:'会议纪要.txt', icon:'i-mac-txt', size:'4 KB' },
+      ]},
+      { type:'folder', name:'Pictures', icon:'i-mac-folder', children:[
+        { type:'file', name:'海景照.png', icon:'i-mac-img', size:'1.2 MB' },
+        { type:'file', name:'旅行.jpg', icon:'i-mac-img', size:'880 KB' },
+      ]},
+      { type:'folder', name:'Downloads', icon:'i-mac-folder-dl', children:[
+        { type:'file', name:'Xcode_15.dmg', icon:'i-mac-dmg', size:'8.4 GB' },
+        { type:'file', name:'macOS_Sonoma.dmg', icon:'i-mac-dmg', size:'14 GB' },
+      ]},
+      { type:'folder', name:'Users', icon:'i-mac-folder', children:[
+        { type:'folder', name:'chenyanjiao', icon:'i-mac-folder', children:[
+          { type:'folder', name:'Desktop', icon:'i-mac-folder', children:[] },
+          { type:'folder', name:'Music', icon:'i-mac-folder', children:[
+            { type:'file', name:'夜空.mp3', icon:'i-mac-txt', size:'4.2 MB' },
+          ]},
+        ]},
+      ]},
+    ]
+  },
+  win98: {
+    name: '(C:)',
+    icon: 'i-w98-mycomputer',
+    children: [
+      { type:'folder', name:'Windows', icon:'i-w98-folder', children:[
+        { type:'folder', name:'System', icon:'i-w98-folder', children:[
+          { type:'file', name:'NOTEPAD.EXE', icon:'i-w98-exe', size:'32 KB' },
+          { type:'file', name:'CALC.EXE', icon:'i-w98-calc', size:'24 KB' },
+          { type:'file', name:'WIN.COM', icon:'i-w98-exe', size:'120 KB' },
+          { type:'file', name:'KERNEL32.DLL', icon:'i-w98-doc', size:'380 KB' },
+        ]},
+        { type:'folder', name:'System32', icon:'i-w98-folder', children:[
+          { type:'file', name:'MSPAINT.EXE', icon:'i-w98-exe', size:'280 KB' },
+          { type:'file', name:'EXPLORER.EXE', icon:'i-w98-exe', size:'420 KB' },
+          { type:'file', name:'CMD.EXE', icon:'i-w98-bat', size:'40 KB' },
+          { type:'file', name:'USER32.DLL', icon:'i-w98-doc', size:'200 KB' },
+        ]},
+        { type:'file', name:'README.TXT', icon:'i-w98-txt', size:'4 KB' },
+      ]},
+      { type:'folder', name:'Program Files', icon:'i-w98-folder', children:[
+        { type:'file', name:'PCB_MON.EXE', icon:'i-w98-pcb', size:'1.2 MB' },
+        { type:'file', name:'MINESWPR.EXE', icon:'i-w98-mine', size:'90 KB' },
+        { type:'file', name:'CALC32.EXE', icon:'i-w98-calc', size:'32 KB' },
+      ]},
+      { type:'folder', name:'My Documents', icon:'i-w98-folder', children:[
+        { type:'file', name:'报告.doc', icon:'i-w98-doc', size:'18 KB' },
+        { type:'file', name:'记事.txt', icon:'i-w98-txt', size:'2 KB' },
+        { type:'file', name:'课程表.txt', icon:'i-w98-txt', size:'1 KB' },
+      ]},
+      { type:'folder', name:'Games', icon:'i-w98-folder', children:[
+        { type:'file', name:'MINESWPR.EXE', icon:'i-w98-mine', size:'90 KB' },
+        { type:'file', name:'SOL.EXE', icon:'i-w98-exe', size:'110 KB' },
+        { type:'file', name:'FREECELL.EXE', icon:'i-w98-exe', size:'280 KB' },
+      ]},
+      { type:'file', name:'COMMAND.COM', icon:'i-w98-bat', size:'48 KB' },
+      { type:'file', name:'AUTOEXEC.BAT', icon:'i-w98-bat', size:'1 KB' },
+      { type:'file', name:'CONFIG.SYS', icon:'i-w98-txt', size:'1 KB' },
+    ]
+  }
+};
+
+/* ===================================================================
+   APP DEFINITIONS
+   =================================================================== */
+const APPS = {
+  finder: { title:'访达 (Finder)', width:780, height:520, macIcon:'i-finder' },
+  pcb:    { title:'进程控制面板', width:820, height:560, macIcon:'i-mac-pcb' },
+  /* ★ macOS 版计算器单独给更大尺寸：5 行圆形按钮 + 84px 显示区 + 状态栏需 ~497px 内容高，
+     加 38px 标题栏 = 560 窗口高才不裁剪。Win98 版沿用 300x420。 */
+  calc:   { title:'计算器', width:300, height:420, macWidth:340, macHeight:560, macIcon:'i-mac-calc' },
+  mine:   { title:'扫雷', width:520, height:520, macIcon:'i-mac-mine' },
+  term:   { title:'终端 — bash', width:680, height:420, macIcon:'i-mac-term' },
+  paint:  { title:'画图 (Paint)', width:720, height:540, macIcon:'i-mac-paint' },
+};
+
+/* Per-app process defaults: base memKB + per-tick work cost (ms of model CPU work).
+   Apps return cost dynamically: PCB builder/calc need cost only when user is actively
+   interacting, and 0 when idle (so CPU drops to 0% when user stops). */
+const APPS_PROC_DEFAULTS = {
+  calc:  { memKB: 512,  work: ()=> (window._calcActive?40:2) },
+  mine:  { memKB: 1024, work: ()=> (window._mineActive?30:2) },
+  term:  { memKB: 768,  work: ()=> (window._termActive?20:2) },
+  pcb:   { memKB: 4096, work: ()=> (window._pcbActive?60:3) }, // PCB base 4 MiB
+  finder:{ memKB: 2048, work: ()=> 5 },
+  paint: { memKB: 8192, work: ()=> (window._paintActive?80:3) }, // 画图基数 8192KB（符合速查表）
+};
+
+/* ===================================================================
+   PROCESS MANAGER + RESOURCE METER (deterministic, no Math.random)
+   Each open window owns one process. Process exposes:
+     pid, type, title, status (Running|Ready|Blocked|Zombie),
+     memKB, cpuMs, cpuHistory[] (rolling 1s bucket), pending (ms).
+   The Scheduler grants at most 100ms of "model CPU work" per 100ms tick
+   on the single-core, mode='live'. mode='manual' freezes auto dispatch
+   but preserves already-accrued cpuMs / memKB.
+   =================================================================== */
+class ProcessManager {
+  constructor(){
+    this.processes = new Map();   // pid -> process
+    this.byType = new Map();     // appType -> pid (latest instance)
+    this.nextPid = 101;
+    this.mode = 'live';          // 'live' | 'manual'
+    this.tickMs = 100;
+    this.cpuPct = 0;             // 0..100 (single core)
+    this.cpuHistory = [];         // [{ts, ms}]
+    this.tickHandle = null;
+    this.onTick = null;          // callback fired every tick (for terminal UI refresh)
+    this._lastTickTs = Date.now();
+    this._tick();
+    this.tickHandle = setInterval(()=>this._tick(), this.tickMs);
+  }
+  // Public API ---------------------------------------------------------
+  spawn(type, title, ctx={}){
+    const pid = this.nextPid++;
+    const p = {
+      pid, title, ctx,
+      type,
+      status: 'Ready',
+      memKB: ctx.memKB || 1024,         // base 1MiB
+      cpuMs: 0,                          // total accumulated model CPU ms
+      cpuHistory: [],                    // [{ts, ms}]
+      pending: 0,                        // pending work awaiting schedule
+      work: ctx.work || null,            // function returning ms-cost this tick
+      onBlock: ctx.onBlock || null,
+      onWake: ctx.onWake || null,
+      createdAt: Date.now(),
+    };
+    this.processes.set(pid, p);
+    this.byType.set(type, pid);
+    // First tick turns Ready -> Running (live mode only)
+    if(this.mode==='live') p.status = 'Running';
+    return p;
+  }
+  terminate(pid){
+    const p = this.processes.get(pid); if(!p) return;
+    // ★ 清理该进程注册的所有内部定时器（appInterval 注册），防止僵尸计时器
+    if(p._timers && p._timers.length){ p._timers.forEach(t=>clearInterval(t)); p._timers.length=0; }
+    if(this.byType.get(p.type)===pid) this.byType.delete(p.type);
+    this.processes.delete(pid);
+  }
+  block(pid){
+    const p = this.processes.get(pid); if(!p) return '未找到该 PID';
+    if(p.status!=='Running') return `无法阻塞，进程当前为 ${p.status}`;
+    p.status='Blocked';
+    return `PID ${pid} -> Blocked`;
+  }
+  wake(pid){
+    const p = this.processes.get(pid); if(!p) return '未找到该 PID';
+    if(p.status!=='Blocked') return `无法唤醒，进程当前为 ${p.status}`;
+    p.status='Ready';
+    // scheduler will pick it up next tick (live mode only)
+    return `PID ${pid} -> Ready`;
+  }
+  step(){
+    // single 100ms time-slice
+    if(this.mode!=='manual') return '当前不是手动模式，step 无效';
+    this._tick(true);
+    return `单步 100ms 已执行`;
+  }
+  setMode(m){
+    this.mode = m;
+    if(m==='live'){
+      // resume: clear pending frozen work but keep accumulators
+      this.processes.forEach(p=>{ if(p.status==='Ready') p.status='Running'; });
+      return '已切到 live，自动调度恢复';
+    } else {
+      return '已切到 manual，自动调度冻结';
+    }
+  }
+  // PCB block (process control block) --------------------------------
+  pcb(pid){
+    const p = this.processes.get(pid); if(!p) return null;
+    return {
+      PID: p.pid, NAME: p.title, TYPE: p.type, STATE: p.status,
+      MEM_KB: p.memKB, CPU_MS: p.cpuMs, CPU_PCT: this.cpuPct.toFixed(1),
+      PENDING_MS: p.pending, UPTIME_MS: Date.now()-p.createdAt,
+    };
+  }
+  psList(){
+    return [...this.processes.values()].sort((a,b)=>a.pid-b.pid);
+  }
+  // Scheduler --------------------------------------------------------
+  _tick(force=false){
+    if(!force && this.mode!=='live') {
+      // freeze: don't change any state, but still tick the clock
+      this._lastTickTs = Date.now();
+      return;
+    }
+    const now = Date.now();
+    const delta = now - this._lastTickTs;
+    this._lastTickTs = now;
+    // Clean old CPU history (keep last 1000ms)
+    const cutoff = now - 1000;
+    while(this.cpuHistory.length && this.cpuHistory[0].ts < cutoff) this.cpuHistory.shift();
+    // Single-core, this tick we grant at most deltaMs (typically 100ms) total work
+    let budget = Math.min(delta, this.tickMs);
+    // Dispatch policy: round-robin on Running processes
+    const running = [];
+    this.processes.forEach(p=>{
+      if(p.status==='Running') running.push(p);
+    });
+    let totalUsed = 0;
+    running.forEach(p=>{
+      if(budget<=0) return;
+      let cost = 0;
+      if(typeof p.work==='function') cost = Math.max(0, p.work(delta) | 0);
+      else cost = delta; // default idle cost: full tick
+      const grant = Math.min(cost, budget);
+      p.cpuMs += grant;
+      p.cpuHistory.push({ts: now, ms: grant});
+      // bound inner history to last 1s
+      while(p.cpuHistory.length && p.cpuHistory[0].ts < cutoff) p.cpuHistory.shift();
+      budget -= grant;
+      totalUsed += grant;
+    });
+    this.cpuHistory.push({ts: now, ms: totalUsed});
+    // CPU% = sum ms of last 1s / 10
+    const sumMs = this.cpuHistory.reduce((a,b)=>a+b.ms, 0);
+    this.cpuPct = Math.min(100, sumMs/10);
+    if(this.onTick) this.onTick();
+  }
+  // For terminal to format table
+  totalMem(){
+    let sum = 0; this.processes.forEach(p=>sum+=p.memKB); return sum;
+  }
+}
+const PM = new ProcessManager();
+window.PM = PM;
+// Notify terminal refresh whenever processes change (cheap)
+const _origSpawn = PM.spawn.bind(PM);
+PM.spawn = function(...a){ const p=_origSpawn(...a); return p; };
+const _origTerm = PM.terminate.bind(PM);
+PM.terminate = function(pid){ _origTerm(pid); return true; };
+
+/* ===================================================================
+   WINDOW MANAGER (single class handling both OS chrome styles)
+   =================================================================== */
+class WindowManager {
+  constructor() {
+    this.zCounter = 1000;
+    this.windows = new Map(); // id -> {el, app, winState}
+    this.dockItems = {};      // appId -> dock DOM element (macOS: 用于"最小化窗口指示"与点击恢复)
+  }
+  open(app, opts={}){
+    if(app==='finder') return this.openFinder(opts);
+    const id = app + '_' + uid();
+    const a = APPS[app];
+    if(!a){ showTip('未找到应用：'+app); return; }
+    const isMac = currentOS === 'macos';
+    let w = (isMac && a.macWidth)  ? a.macWidth  : a.width;
+    let h = (isMac && a.macHeight) ? a.macHeight : a.height;
+    const desktop = $('#'+currentOS+'-desktop');
+    const rect = desktop.getBoundingClientRect();
+    // ★ 小屏适配：窗口不得超过桌面可用区，否则底部/右侧被裁到屏幕外。
+    //   macOS 额外预留 Dock 高度(~96)，Win98 预留任务栏(~44)。
+    const reserveH = isMac ? 96 : 44;
+    const availW = Math.max(300, rect.width - 40);
+    const availH = Math.max(220, rect.height - reserveH);
+    if(w > availW) w = availW;
+    if(h > availH) h = availH;
+    // deterministic cascade placement (no Math.random)
+    const openCount = (window._openCount = (window._openCount||0) + 1);
+    const x = Math.max(20, Math.min(rect.width - w - 20, 80 + ((openCount*37)%120)));
+    const y = Math.max(20, Math.min(rect.height - h - reserveH, 50 + ((openCount*53)%80)));
+    const win = el('div', {
+      class: isMac ? 'mac-window' : 'w98-window',
+      style:`left:${x}px;top:${y}px;width:${w}px;height:${h}px;z-index:${++this.zCounter}`,
+      'data-id': id, 'data-app': app
+    });
+    if(isMac){
+      const tb = el('div', { class:'mac-titlebar' },
+        el('div', { class:'traffic-lights' },
+          el('button', { class:'tl close', title:'关闭（结束进程）', onclick:(e)=>{e.stopPropagation();this.close(id);} }, el('span',{},'×')),
+          el('button', { class:'tl min', title:'最小化（PID保留）', onclick:(e)=>{e.stopPropagation();this.minimize(id);} }, el('span',{},'−')),
+          el('button', { class:'tl max', title:'放大还原', onclick:(e)=>{e.stopPropagation();this.toggleMax(id);} }, el('span',{},'+')),
+        ),
+        el('div', { class:'title' }, a.title + (opts.suffix||''))
+      );
+      win.appendChild(tb);
+      this._dragHandler(win, tb);
+    } else {
+      const tb = el('div', { class:'w98-titlebar' },
+        el('span', { class:'w98-title-text' }, a.title),
+        el('div', { class:'w98-ctrls' },
+          el('button', { class:'w98-btn', title:'最小化', onclick:(e)=>{e.stopPropagation();this.minimize(id);} }, '_'),
+          el('button', { class:'w98-btn', title:'最大化', onclick:(e)=>{e.stopPropagation();this.toggleMax(id);} }, '□'),
+          el('button', { class:'w98-btn', title:'关闭', onclick:(e)=>{e.stopPropagation();this.close(id);} }, '×'),
+        )
+      );
+      win.appendChild(tb);
+      // Win98 menu bar
+      const mb = el('div', { class:'w98-menubar' },
+        el('span', { class:'wm-item', onclick:()=>showTip('文件菜单') }, '文件(F)'),
+        el('span', { class:'wm-item', onclick:()=>showTip('编辑菜单') }, '编辑(E)'),
+        el('span', { class:'wm-item', onclick:()=>showTip('视图菜单') }, '视图(V)'),
+        el('span', { class:'wm-item', onclick:()=>showTip('帮助菜单') }, '帮助(H)'),
+      );
+      win.appendChild(mb);
+      this._dragHandler(win, tb);
+    }
+    const body = el('div', { class: isMac ? 'mac-window-body' : 'w98-window-body', style:'flex:1;overflow:hidden' });
+    win.appendChild(body);
+    desktop.appendChild(win);
+    win.addEventListener('mousedown', ()=>this.focus(id));
+    this._makeResizable(win);   // ★ 挂载自由缩放手柄
+    // Spawn a process for this window. Builder returns the per-tick work fn & memKB hooks.
+    const proc = PM.spawn(app, a.title, { memKB: APPS_PROC_DEFAULTS[app]?.memKB || 1024, work: ()=>APPS_PROC_DEFAULTS[app]?.work?.() ?? 5 });
+    const meta = { el: win, app, appType:app, isMac, minimized:false, maximized:false, pid: proc.pid, proc };
+    this.windows.set(id, meta);
+    // ★ 修复：原先 builder 抛错时 (例如 buildMineWin 漏掉 proc 参数)，后面的 focus() + refreshTaskbar() 都不会执行，
+    //        导致 WM.windows 里有 zombie meta、任务栏出现"打不开也关不掉"的残影按钮。
+    try {
+      APP_BUILDERS[app](body, isMac, this, id, proc);
+    } catch(err){
+      console.error('[WM.open] builder "'+app+'" threw:', err);
+      showTip('应用启动失败：'+app+'（'+err.message+'）');
+      // 立即回收，避免僵尸窗口/僵尸进程
+      this.windows.delete(id);
+      win.remove();
+      if(proc?.pid) PM.terminate(proc.pid);
+      this.refreshTaskbar();
+      return null;
+    }
+    this.focus(id);
+    this.refreshTaskbar();
+    this.syncDock();
+    return meta;
+  }
+  focus(id){
+    const w = this.windows.get(id); if(!w||w.minimized) return;
+    w.el.style.zIndex = ++this.zCounter;
+    this.refreshTaskbar();
+  }
+  close(id){
+    const w = this.windows.get(id); if(!w) return;
+    // ★ 关键修复：同步删除！原实现把 windows.delete + refreshTaskbar 放进 150ms 的 setTimeout，
+    //   这段窗口期内任务栏按钮仍然存在（且后台标签页 setTimeout 会被节流到 ≥1s），
+    //   造成"窗口已关、任务栏残影关不掉"的僵尸按钮。
+    //   现在：先同步从 map 移除并刷新任务栏（按钮瞬间消失），动画只负责移除 DOM 元素。
+    if(w.pid) PM.terminate(w.pid);
+    this.windows.delete(id);
+    this.refreshTaskbar();
+    this.syncDock();
+    const winEl = w.el;
+    winEl.style.transition='all .15s';
+    winEl.style.opacity='0'; winEl.style.transform='scale(0.9)';
+    setTimeout(()=>{ winEl.remove(); }, 150);
+  }
+  minimize(id){
+    const w = this.windows.get(id); if(!w) return;
+    w.minimized = true; w.el.style.display='none';
+    this.syncDock();
+    this.refreshTaskbar();
+  }
+  toggleMax(id){
+    const w = this.windows.get(id); if(!w) return;
+    w.maximized = !w.maximized;
+    w.el.classList.toggle('maximized', w.maximized);
+    this.refreshTaskbar();
+  }
+  restore(id){
+    const w = this.windows.get(id); if(!w) return;
+    w.minimized = false;
+    w.el.style.display='';
+    this.focus(id);
+    this.syncDock();
+  }
+  // ★ macOS Dock 智能点击：优先恢复最小化的窗口，其次聚焦现有窗口，最后开新窗口
+  dockClick(appId){
+    const wins = [...this.windows.entries()].filter(([k,v])=>v.app===appId);
+    const min = wins.find(([k,v])=>v.minimized);
+    if(min) return this.restore(min[0]);
+    const open = wins.find(([k,v])=>!v.minimized);
+    if(open) return this.focus(open[0]);
+    return this.open(appId);
+  }
+  // ★ 同步 Dock 状态：当某 app 存在最小化窗口时，给对应 dock 图标加 .has-minimized 类（下方出现小圆点）
+  syncDock(){
+    if(currentOS!=='macos' || !this.dockItems) return;
+    for(const [appId, el] of Object.entries(this.dockItems)){
+      if(!el || !el.isConnected) continue;
+      const hasMin = [...this.windows.values()].some(w=>w.app===appId && w.minimized);
+      el.classList.toggle('has-minimized', hasMin);
+    }
+  }
+  refreshTaskbar(){
+    if(currentOS!=='win98') return;
+    // ★ 防御性清理：如果某个 meta 的 el 已经脱离 DOM（理论不应发生，但作为兜底），从 map 中删除并 PM.terminate
+    this.windows.forEach((w,id)=>{
+      if(!w.el || !w.el.isConnected){
+        if(w.pid) PM.terminate(w.pid);
+        this.windows.delete(id);
+      }
+    });
+    const list = $('#w98-task-list'); list.innerHTML='';
+    this.windows.forEach((w,id)=>{
+      const a = APPS[w.appType];
+      const btn = el('button', {
+        class:'w98-task-btn' + (w.minimized?'':' active'),
+        title: a.title,
+        onclick:()=>{
+          if(w.minimized) this.restore(id);
+          else if(parseInt(w.el.style.zIndex) === this.zCounter) this.minimize(id);
+          else this.focus(id);
+        }
+      },
+        el('span', {}, a.title),
+      );
+      list.appendChild(btn);
+    });
+  }
+  /* ★ 窗口自由缩放：右边缘 / 底边缘 / 右下角 三个拖拽手柄
+     - 手柄本身透明，只提供 hover 光标（ew-resize / ns-resize / nwse-resize）
+     - 下限 MIN_W×MIN_H = 300×200，上限为桌面可视区，防止缩到不可见或拖出屏幕 */
+  _makeResizable(win){
+    if(win.dataset.resizable === '1') return;   // 幂等，避免重复挂载
+    win.dataset.resizable = '1';
+    const MIN_W = 300, MIN_H = 200;
+    // 顺序很重要：se 必须最后插入，才能盖在 e / s 之上（同为 z-index:9 时后者在上）
+    [['e'],['s'],['se']].forEach(([dir])=>{
+      const h = el('div',{ class:'win-rsz '+dir, 'data-dir':dir, title:'拖拽调整窗口大小' });
+      win.appendChild(h);
+      h.addEventListener('mousedown',(e)=>{
+        if(e.button !== 0) return;                       // 只响应左键
+        if(win.classList.contains('maximized')) return;  // 最大化状态不缩放
+        e.stopPropagation();            // 不要触发窗口 mousedown（避免抢焦点/误判）
+        e.preventDefault();             // 阻止原生拖拽选区
+        const startX = e.clientX, startY = e.clientY;
+        const sw = win.offsetWidth, sh = win.offsetHeight;
+        const desktop = win.parentElement;
+        const dr = desktop ? desktop.getBoundingClientRect() : {width:9999, height:9999};
+        const maxW = Math.max(MIN_W, dr.width  - 8);
+        const maxH = Math.max(MIN_H, dr.height - 8);
+        const move = (ev)=>{
+          let nw = sw, nh = sh;
+          if(dir === 'e'  || dir === 'se') nw = sw + (ev.clientX - startX);
+          if(dir === 's'  || dir === 'se') nh = sh + (ev.clientY - startY);
+          nw = Math.max(MIN_W, Math.min(maxW, nw));
+          nh = Math.max(MIN_H, Math.min(maxH, nh));
+          win.style.width  = nw + 'px';
+          win.style.height = nh + 'px';
+        };
+        const up = ()=>{
+          document.removeEventListener('mousemove', move);
+          document.removeEventListener('mouseup', up);
+          document.body.classList.remove('wm-resizing');
+        };
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+        document.body.classList.add('wm-resizing');
+      });
+    });
+  }
+  _dragHandler(win, tb){
+    let dx=0,dy=0,drag=false;
+    tb.addEventListener('mousedown',(e)=>{
+      if(e.target.tagName==='BUTTON' || e.target.closest('button')) return;
+      if(win.classList.contains('maximized')) return;
+      drag=true; dx=e.clientX-win.offsetLeft; dy=e.clientY-win.offsetTop;
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove',(e)=>{
+      if(!drag) return;
+      const desktop = win.parentElement;
+      const r = desktop.getBoundingClientRect();
+      let nx=e.clientX-dx, ny=e.clientY-dy;
+      nx=Math.max(-win.offsetWidth+100, Math.min(r.width-50, nx));
+      ny=Math.max(0, Math.min(r.height-40, ny));
+      win.style.left=nx+'px'; win.style.top=ny+'px';
+    });
+    document.addEventListener('mouseup',()=>drag=false);
+  }
+}
+
+/* ===================================================================
+   OPEN FINDER (special handling: macOS Finder / Win98 Explorer)
+   =================================================================== */
+WindowManager.prototype.openFinder = function(opts={}){
+  const id = 'finder_' + uid();
+  const isMac = currentOS === 'macos';
+  const a = { title: isMac ? FS.macos.name : '我的电脑', width: isMac?780:680, height: isMac?520:440 };
+  const desktop = $('#'+currentOS+'-desktop');
+  const rect = desktop.getBoundingClientRect();
+  const openCount = (window._openCount = (window._openCount||0) + 1);
+  const x = 60 + ((openCount*41)%100), y = 50 + ((openCount*37)%60);
+  const win = el('div', {
+    class: isMac?'mac-window':'w98-window',
+    style:`left:${x}px;top:${y}px;width:${a.width}px;height:${a.height}px;z-index:${++this.zCounter}`,
+    'data-id': id, 'data-app':'finder'
+  });
+  if(isMac){
+    const tb = el('div',{class:'mac-titlebar'},
+      el('div',{class:'traffic-lights'},
+        el('button',{class:'tl close',title:'关闭',onclick:()=>this.close(id)},el('span',{},'×')),
+        el('button',{class:'tl min',title:'最小化',onclick:()=>this.minimize(id)},el('span',{},'−')),
+        el('button',{class:'tl max',title:'放大还原',onclick:()=>this.toggleMax(id)},el('span',{},'+')),
+      ),
+      el('div',{class:'title'},a.title));
+    win.appendChild(tb); this._dragHandler(win,tb);
+  } else {
+    const tb = el('div',{class:'w98-titlebar'},
+      el('span',{class:'w98-title-text'},a.title),
+      el('div',{class:'w98-ctrls'},
+        el('button',{class:'w98-btn',title:'最小化',onclick:()=>this.minimize(id)},'_'),
+        el('button',{class:'w98-btn',title:'最大化',onclick:()=>this.toggleMax(id)},'□'),
+        el('button',{class:'w98-btn',title:'关闭',onclick:()=>this.close(id)},'×')));
+    win.appendChild(tb); this._dragHandler(win,tb);
+    const mb = el('div',{class:'w98-menubar'},
+      el('span',{class:'wm-item',onclick:()=>showTip('文件操作')},'文件(F)'),
+      el('span',{class:'wm-item',onclick:()=>showTip('编辑操作')},'编辑(E)'),
+      el('span',{class:'wm-item',onclick:()=>showTip('视图菜单')},'查看(V)'),
+      el('span',{class:'wm-item',onclick:()=>showTip('帮助菜单')},'帮助(H)'));
+    win.appendChild(mb);
+  }
+  const body = el('div',{class: isMac?'mac-window-body':'w98-window-body', style:'flex:1;display:flex;flex-direction:column;overflow:hidden'});
+  win.appendChild(body);
+  desktop.appendChild(win);
+  win.addEventListener('mousedown',()=>this.focus(id));
+  this._makeResizable(win);   // ★ 挂载自由缩放手柄
+  const proc = PM.spawn('finder', a.title, { memKB: 2048, work: ()=>5 });
+  const meta = {el:win,app:'finder',appType:'finder',isMac,minimized:false,maximized:false,pid:proc.pid,proc};
+  this.windows.set(id, meta);
+  if(isMac) buildMacFinder(body, FS.macos, this, id, proc, opts.path || '');
+  else buildWin98Explorer(body, FS.win98, this, id, proc, opts.path || '');
+  this.focus(id);
+  this.refreshTaskbar();
+  this.syncDock();
+};
+
+/* ===================================================================
+   FINDER (macOS)
+   =================================================================== */
+function buildMacFinder(body, root, wm, yip, proc, initPath){
+  let current = root, pathStack=[root], pathIdx=0;
+  // 找到指定 path 的目录
+  if(initPath){
+    const parts = initPath.split('/').filter(Boolean);
+    let node = root;
+    let ok = true;
+    for(const p of parts){
+      if(!node.children){ ok=false; break; }
+      const next = node.children.find(c=>c.name===p);
+      if(!next){ ok=false; break; }
+      pathStack.push(next);
+      node = next;
+    }
+    if(ok){
+      pathIdx = pathStack.length-1;
+      current = pathStack[pathIdx];
+    }
+  }
+  const grid = el('div',{class:'finder-grid'});
+  const tb = el('div',{class:'finder-toolbar'});
+  const back = el('button',{class:'nav-btn',onclick:()=>goBack()},'◀');
+  const fwd = el('button',{class:'nav-btn',onclick:()=>goFwd()},'▶');
+  const title = el('span',{class:'finder-title'},root.name);
+  const search = el('input',{class:'search-box',type:'text',placeholder:'搜索', oninput:(e)=>renderGrid(e.target.value)});
+  tb.append(back,fwd,title,search);
+  const sb = el('div',{class:'finder-statusbar'},'');
+  body.append(tb, grid, sb);
+  function setNav(){
+    back.classList.toggle('disabled', pathIdx<=0);
+    fwd.classList.toggle('disabled', pathIdx>=pathStack.length-1);
+    title.textContent = pathStack.slice(1).map(p=>p.name).join('/') || current.name;
+  }
+  function goBack(){ if(pathIdx>0){pathIdx--; current=pathStack[pathIdx]; setNav(); renderGrid();} }
+  function goFwd(){ if(pathIdx<pathStack.length-1){pathIdx++; current=pathStack[pathIdx]; setNav(); renderGrid();} }
+  function openNode(node){
+    if(node.type==='folder'){
+      node.children = node.children||[];
+      pathStack=pathStack.slice(0,pathIdx+1);
+      pathStack.push(node);
+      pathIdx=pathStack.length-1;
+      current=node;
+      setNav(); renderGrid();
+    } else if(node.type==='app'){
+      wm.close(yip);
+      wm.open(node.app);
+    } else {
+      showTip('正在打开：'+node.name+'（双击文件）');
+    }
+  }
+  function renderGrid(filter=''){
+    grid.innerHTML='';
+    const list = (current.children||[]).filter(n=>!filter || n.name.toLowerCase().includes(filter.toLowerCase()));
+    list.forEach(n=>{
+      const item = document.createElement('div');
+      item.className = 'finder-grid-item';
+      item.dataset.name = n.name;
+      item.dataset.type = n.type;
+      item.dataset.app = n.app || '';
+      // ★ 用 addEventListener 绑定 click + dblclick（单击选中、双击打开）
+      let lastClickAt = 0;
+      item.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        const now = Date.now();
+        if(now - lastClickAt < 350){
+          lastClickAt = 0;
+          openNode(n);
+        } else {
+          lastClickAt = now;
+          grid.querySelectorAll('.finder-grid-item').forEach(x=>x.classList.remove('selected'));
+          item.classList.add('selected');
+        }
+      });
+      // 双击文件 .doc/.txt → 弹"打开"提示（教学模型：模拟文件查看）
+      if(n.type === 'file'){
+        item.addEventListener('dblclick', ()=>{
+          showDialog('mac', '打开文件：'+n.name, '文件内容（教学模型预览）：\n\n这是一个 '+(n.size||'?')+' 的 '+n.name+' 文件。\n\n真实系统会用对应应用打开，\n本仿真展示系统调用路径。');
+        });
+      }
+      const thumb = document.createElement('div');
+      thumb.className = 'file-thumb';
+      if(n.icon){
+        thumb.innerHTML = `<svg width="52" height="52"><use href="#${n.icon}"/></svg>`;
+      } else {
+        thumb.textContent = '📄';
+      }
+      const nm = document.createElement('div');
+      nm.className = 'file-name';
+      nm.textContent = n.name;
+      item.appendChild(thumb);
+      item.appendChild(nm);
+      grid.appendChild(item);
+    });
+    sb.textContent = list.length+' 个项目' + (filter?(' · 搜索 "'+filter+'"'):'');
+  }
+  setNav(); renderGrid();
+}
+
+/* ===================================================================
+   EXPLORER (Win98)
+   =================================================================== */
+function buildWin98Explorer(body, root, wm, yip){
+  const tb = el('div',{class:'w98-explorer-toolbar'},
+    el('button',{class:'w98-tbtn',onclick:()=>showTip('上一级')},'←'),
+    el('button',{class:'w98-tbtn',onclick:()=>showTip('下一级')},'→'),
+    el('button',{class:'w98-tbtn',onclick:()=>showTip('向上')},'↑'),
+    el('div',{style:'width:8px'}),
+    el('button',{class:'w98-tbtn',onclick:()=>showTip('剪切')},'剪切'),
+    el('button',{class:'w98-tbtn',onclick:()=>showTip('复制')},'复制'),
+    el('button',{class:'w98-tbtn',onclick:()=>showTip('粘贴')},'粘贴'),
+  );
+  const tree = el('div',{class:'w98-explorer-tree'});
+  const files = el('div',{class:'w98-explorer-files'});
+  const content = el('div',{class:'w98-explorer-content'},tree,files);
+  const sb = el('div',{class:'w98-statusbar'},
+    el('span',{class:'stsb-fld',id:'w98-cur-path'},root.name),
+    el('span',{class:'stsb-fld',style:'flex:0 0 100px'},'0 个对象'),
+  );
+  body.append(tb, content, sb);
+  let cur = root, curNode = null;
+  function renderTree(){
+    tree.innerHTML='';
+    const rootNode = el('div',{class:'tree-node', onclick:()=>selectNode(root)},
+      el('span',{},'📁 '), el('span',{},root.name));
+    tree.appendChild(rootNode);
+    (root.children||[]).forEach(c=>{
+      if(c.type==='folder'){
+        const tn = el('div',{class:'tree-node', onclick:()=>selectNode(c)},
+          el('span',{},'📁 '), el('span',{},c.name));
+        tree.appendChild(tn);
+      }
+    });
+  }
+  function selectNode(node){
+    cur = node; curNode = node;
+    $('#w98-cur-path', sb).textContent = node.name;
+    tree.querySelectorAll('.tree-node').forEach(n=>n.classList.remove('selected'));
+    event && event.currentTarget && event.currentTarget.classList.add('selected');
+    renderFiles();
+  }
+  function renderFiles(){
+    files.innerHTML='';
+    (cur.children||[]).forEach(n=>{
+      const f = el('div',{class:'w98-explorer-file',
+        dblclick:()=>openItem(n)},
+        el('div',{class:'file-thumb'},
+          n.icon?el('svg',{width:'32',height:'32',innerHTML:'<use href="#'+n.icon+'"/>'}):''),
+        el('div',{class:'file-name'},n.name));
+      files.appendChild(f);
+    });
+    sb.lastChild.textContent = (cur.children||[]).length+' 个对象';
+  }
+  function openItem(node){
+    if(node.type==='folder'){ selectNode(node); }
+    else if(node.app){ wm.close(yip); wm.open(node.app); }
+    else { showTip('打开文件：'+node.name+'（'+node.size+'）'); }
+  }
+  renderTree();
+  renderFiles();
+  // Initial select C:
+  cur = root; curNode = root;
+}
+
+/* ===================================================================
+   APP BUILDERS (called by WindowManager.open)
+   =================================================================== */
+const APP_BUILDERS = {
+  pcb:(body, isMac, wm, yip, proc)=>{
+    body.style.cssText='flex:1;overflow:hidden;display:flex';
+    if(isMac) buildPcbMac(body, wm, yip, proc);
+    else buildPcbWin(body, wm, yip, proc);
+  },
+  calc:(body, isMac, wm, yip, proc)=>{
+    body.style.cssText='flex:1;overflow:hidden;display:flex;flex-direction:column';
+    if(isMac) buildCalcMac(body, wm, yip, proc);
+    else buildCalcWin(body, wm, yip, proc);
+  },
+  mine:(body, isMac, wm, yip, proc)=>{
+    body.style.cssText='flex:1;overflow:hidden;display:flex;flex-direction:column';
+    if(isMac) buildMineMac(body, wm, yip, proc);
+    else buildMineWin(body, wm, yip, proc);
+  },
+  term:(body, isMac, wm, yip, proc)=>{
+    body.style.cssText='flex:1;overflow:hidden;display:flex;flex-direction:column';
+    if(isMac) buildTermMac(body, wm, yip, proc);
+    else buildTermWin(body, wm, yip, proc);
+  },
+  paint:(body, isMac, wm, yip, proc)=>{
+    body.style.cssText='flex:1;overflow:hidden;display:flex;flex-direction:column';
+    if(isMac) buildPaintMac(body, wm, yip, proc);
+    else buildPaintWin(body, wm, yip, proc);
+  },
+};
+
+/* ===================================================================
+   PCB APP
+   =================================================================== */
+// 报告要求：PCB 必须体现「进程所属用户」与「处理机现场（程序计数器）」两个字段。
+// 本演示为单用户教学模型，两列取固定示例值；若要与全局登录用户保持一致，
+// 把 PCB_USER 换成 USER.name 即可。
+const PCB_USER = 'zhangsan';    // 进程所属用户 (UID owner)
+const PCB_PC   = '0x0000';      // 程序计数器 PC（下一条待执行指令地址）
+
+function buildPcbMac(body, wm, yip, proc){
+  // PCB = Process Control Block. 进程控制面板 / Process Monitor.
+  // 数据源：与终端 `ps` / `pcb <pid>` 命令共享 ProcessManager (PM)。
+  const root = el('div',{class:'pcb-mon'});
+
+  // ========== Header ==========
+  const badge = el('span',{class:'badge live'},'● LIVE');
+  const header = el('div',{class:'pcb-mon-hd'},
+    el('div',{class:'pcb-mon-title'},
+      el('span',{class:'dot'}),
+      '进程控制面板',
+      el('small',{},'Process Monitor · '+proc.title)
+    ),
+    el('div',{class:'pcb-mon-badges'}, badge)
+  );
+
+  // ========== Top dashboard (4 metric cards) ==========
+  const cardProc = el('div',{class:'card'},
+    el('div',{class:'label'},'Processes'),
+    el('div',{class:'val',id:'pm-cnt'},'0'),
+    el('div',{class:'sub'},'进程总数'));
+  const cardCpu = el('div',{class:'card cpu'},
+    el('div',{class:'label'},'CPU'),
+    el('div',{class:'val',id:'pm-cpu'},'0.0%'),
+    el('div',{class:'sub'},'系统总占用'));
+  const cardMem = el('div',{class:'card mem'},
+    el('div',{class:'label'},'Memory'),
+    el('div',{class:'val',id:'pm-mem'},'0'),
+    el('div',{class:'sub'},'KB (所有进程)'));
+  const cardMode = el('div',{class:'card mode live'},
+    el('div',{class:'label'},'Scheduler'),
+    el('div',{class:'val',id:'pm-mode'},'LIVE'),
+    el('div',{class:'sub'},'调度模式'));
+  const dash = el('div',{class:'pcb-mon-dash'}, cardProc, cardCpu, cardMem, cardMode);
+
+  // ========== Body: list (left) + detail (right) ==========
+  const listEl = el('div',{class:'pcb-mon-list'});
+  const listHd = el('div',{class:'pcb-mon-list-hd'}, '进程控制块 · Process Control Block');
+  const tableWrap = el('div',{class:'pcb-mon-table'});
+  const tbl = el('table',{});
+  tbl.appendChild(el('thead',{},
+    el('tr',{},
+      el('th',{},'PID'),
+      el('th',{class:'col-u'},'USER'),
+      el('th',{},'TYPE'),
+      el('th',{},'TITLE'),
+      el('th',{},'STATE'),
+      el('th',{},'MEM'),
+      el('th',{},'CPU_MS'),
+      el('th',{class:'col-p'},'PC')
+    )));
+  const tbody = el('tbody',{});
+  tbl.appendChild(tbody);
+  tableWrap.appendChild(tbl);
+  listEl.append(listHd, tableWrap);
+
+  const detail = el('div',{class:'pcb-mon-detail'});
+
+  const bodyEl = el('div',{class:'pcb-mon-body'}, listEl, detail);
+
+  // ========== Toolbar (bottom) ==========
+  const btnPause = el('button',{},'⏸ Pause');
+  const btnStep = el('button',{disabled:true},'⏭ Step');
+  const btnRefresh = el('button',{},'↻ Refresh');
+  const tbar = el('div',{class:'pcb-mon-tbar'},
+    btnPause, btnStep, btnRefresh,
+    el('span',{class:'spacer'}),
+    el('span',{class:'hint'},'提示：点击列表行查看该进程 PCB 详情（等价于终端 pcb <pid>）')
+  );
+
+  root.append(header, dash, bodyEl, tbar);
+  body.appendChild(root);
+
+  // ========== Format helpers ==========
+  function fmtMs(ms){
+    if(ms<1000) return ms+'ms';
+    if(ms<60000) return (ms/1000).toFixed(1)+'s';
+    if(ms<3600000) return (ms/60000).toFixed(1)+'m';
+    return (ms/3600000).toFixed(1)+'h';
+  }
+  function fmtBytes(kb){
+    if(kb<1024) return kb+'KB';
+    return (kb/1024).toFixed(2)+'MB';
+  }
+  function bumpActivity(){ window._pcbActive = Date.now(); }
+
+  // ========== Render ==========
+  let selectedPid = null;
+
+  function renderTable(){
+    const all = PM.psList();
+    tbody.innerHTML = '';
+    if(all.length===0){
+      tbody.appendChild(el('tr',{},
+        el('td',{colspan:'8',class:'empty'},'(系统中暂无进程)'))
+      );
+      return;
+    }
+    all.forEach(p=>{
+      const isSelf = p.pid === proc.pid;
+      const tr = el('tr',{
+        class: (selectedPid===p.pid?'sel':'') + (isSelf?' self':'')
+      },
+        el('td',{class:isSelf?'pid-val':''}, String(p.pid)),
+        el('td',{class:'col-u'}, PCB_USER),
+        el('td',{}, p.type),
+        el('td',{}, p.title + (isSelf?' ★':'')),
+        el('td',{}, el('span',{class:'st '+p.status}, p.status)),
+        el('td',{}, p.memKB+' KB'),
+        el('td',{}, fmtMs(p.cpuMs)),
+        el('td',{class:'col-p'}, PCB_PC)
+      );
+      tr.addEventListener('click', ()=>{
+        selectedPid = (selectedPid===p.pid) ? null : p.pid;
+        bumpActivity();
+        render();
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderDetail(){
+    detail.innerHTML = '';
+    if(selectedPid===null){
+      detail.appendChild(el('div',{class:'pcb-mon-detail-hd'},
+        el('h4',{},'PCB 详情'),
+        el('span',{class:'pid'},'未选中')
+      ));
+      detail.appendChild(el('div',{class:'empty'},
+        '从左侧列表中选择一个进程，\n即可在此查看完整的进程控制块（PCB）数据。\n\n等价于在终端输入 `pcb <PID>`。'
+      ));
+      return;
+    }
+    const info = PM.pcb(selectedPid);
+    if(!info){
+      detail.appendChild(el('div',{class:'pcb-mon-detail-hd'},
+        el('h4',{},'PCB 详情'),
+        el('span',{class:'pid'},'PID '+selectedPid)
+      ));
+      detail.appendChild(el('div',{class:'empty'},'该进程已退出，无法读取 PCB。'));
+      return;
+    }
+    const isSelf = selectedPid === proc.pid;
+    detail.appendChild(el('div',{class:'pcb-mon-detail-hd'},
+      el('h4',{}, info.NAME),
+      el('span',{class:'pid'},'PID '+info.PID + (isSelf?' · 本窗口 ★':''))
+    ));
+    const rows = [
+      ['PID',     String(info.PID)],
+      ['NAME',    info.NAME],
+      ['USER',    PCB_USER],
+      ['TYPE',    info.TYPE],
+      ['STATE',   info.STATE],
+      ['PC',      PCB_PC],
+      ['MEM_KB',  info.MEM_KB+' KB ('+fmtBytes(info.MEM_KB)+')'],
+      ['CPU_MS',  info.CPU_MS+'ms ('+fmtMs(info.CPU_MS)+')'],
+      ['CPU_%',   info.CPU_PCT+'%'],
+      ['PENDING', info.PENDING_MS+'ms'],
+      ['UPTIME',  fmtMs(info.UPTIME_MS)],
+    ];
+    rows.forEach(([k,v])=>{
+      detail.appendChild(el('div',{class:'kv'},
+        el('span',{class:'key'}, k),
+        el('span',{class:'val'}, v)
+      ));
+    });
+    // Block / Wake actions (mirror 终端 `block <pid>` / `wake <pid>`)
+    const actions = el('div',{class:'actions'});
+    const btnBlock = el('button',{disabled: info.STATE!=='Running'},
+      info.STATE==='Blocked'?'已 Blocked':'Block');
+    btnBlock.onclick = ()=>{
+      const r = PM.block(selectedPid);
+      showTip(r); bumpActivity(); render();
+    };
+    const btnWake = el('button',{disabled: info.STATE!=='Blocked'}, 'Wake');
+    btnWake.onclick = ()=>{
+      const r = PM.wake(selectedPid);
+      showTip(r); bumpActivity(); render();
+    };
+    actions.append(btnBlock, btnWake);
+    detail.appendChild(actions);
+  }
+
+  function renderDash(){
+    const all = PM.psList();
+    const totalMem = PM.totalMem();
+    $('#pm-cnt', root).textContent = all.length;
+    $('#pm-cpu', root).textContent = PM.cpuPct.toFixed(1)+'%';
+    $('#pm-mem', root).textContent = totalMem;
+    const isLive = PM.mode==='live';
+    cardMode.classList.toggle('live', isLive);
+    cardMode.classList.toggle('manual', !isLive);
+    $('#pm-mode', root).textContent = isLive?'LIVE':'MANUAL';
+    badge.className = 'badge ' + (isLive?'live':'manual');
+    badge.textContent = isLive?'● LIVE':'⏸ MANUAL';
+    btnStep.disabled = isLive;
+    btnPause.textContent = isLive?'⏸ Pause':'▶ Run';
+  }
+
+  function render(){
+    renderDash();
+    renderTable();
+    renderDetail();
+  }
+
+  // ========== Toolbar handlers ==========
+  btnPause.onclick = ()=>{
+    const newMode = PM.mode==='live'?'manual':'live';
+    const r = PM.setMode(newMode);
+    showTip(r); bumpActivity(); render();
+  };
+  btnStep.onclick = ()=>{
+    const r = PM.step();
+    showTip(r); bumpActivity(); render();
+  };
+  btnRefresh.onclick = ()=>{
+    showTip('已刷新'); bumpActivity(); render();
+  };
+
+  // ========== Initial render + 250ms polling ==========
+  render();
+  appInterval(proc, render, 250);
+}
+
+function buildPcbWin(body, wm, yip, proc){
+  // PCB = Process Control Block. Win98 风格的进程监控器。
+  // 数据源：与终端 `ps` / `pcb <pid>` 命令共享 ProcessManager (PM)。
+  const root = el('div',{class:'w98-pcbmon'});
+
+  // ========== Title bar ==========
+  const titlebar = el('div',{class:'titlebar'},
+    el('span',{}, 'Process Monitor - C:\\PCB.SYS'),
+    el('span',{class:'clock', id:'pm-clock'},'')
+  );
+
+  // ========== Menu bar (cosmetic) ==========
+  const menubar = el('div',{class:'menubar'},
+    el('span',{},'文件(u)'),
+    el('span',{},'编辑(e)'),
+    el('span',{},'查看(v)'),
+    el('span',{},'进程(p)'),
+    el('span',{},'帮助(h)')
+  );
+
+  // ========== Toolbar ==========
+  const btnPause = el('button',{}, 'Pause');
+  const btnStep = el('button',{disabled:true}, 'Step');
+  const btnRefresh = el('button',{}, 'Refresh');
+  const btnTerm = el('button',{disabled:true}, 'End Process');
+  const toolbar = el('div',{class:'toolbar'},
+    btnPause, btnStep, btnRefresh,
+    el('div',{class:'sep'}),
+    btnTerm,
+    el('div',{class:'sep'}),
+    el('span',{class:'lbl'},'模式: '),
+    el('span',{class:'lbl'}, el('b',{id:'pm-mode-lbl'},'LIVE'))
+  );
+
+  // ========== Dashboard (4 stat boxes) ==========
+  const statProc = el('div',{class:'stat'},
+    el('div',{class:'inner'},
+      el('div',{class:'lbl'},'Processes'),
+      el('div',{class:'val', id:'pm-cnt'},'0')
+    ));
+  const statCpu = el('div',{class:'stat cpu'},
+    el('div',{class:'inner'},
+      el('div',{class:'lbl'},'CPU Usage'),
+      el('div',{class:'val', id:'pm-cpu'},'0.0%')
+    ));
+  const statMem = el('div',{class:'stat mem'},
+    el('div',{class:'inner'},
+      el('div',{class:'lbl'},'Memory (Total)'),
+      el('div',{class:'val', id:'pm-mem'},'0 KB')
+    ));
+  const statMode = el('div',{class:'stat mode live'},
+    el('div',{class:'inner'},
+      el('div',{class:'lbl'},'Scheduler'),
+      el('div',{class:'val', id:'pm-mode'},'LIVE')
+    ));
+  const dash = el('div',{class:'w98-pcbmon-dash'}, statProc, statCpu, statMem, statMode);
+
+  // ========== Main: list (left) + detail (right) ==========
+  const scrollWrap = el('div',{class:'scroll'});
+  const tbl = el('table',{});
+  tbl.appendChild(el('thead',{},
+    el('tr',{},
+      el('th',{},'PID'),
+      el('th',{class:'col-u'},'USER'),
+      el('th',{},'Type'),
+      el('th',{},'Title'),
+      el('th',{},'State'),
+      el('th',{},'Mem'),
+      el('th',{},'CPU ms'),
+      el('th',{class:'col-p'},'PC')
+    )));
+  const tbody = el('tbody',{});
+  tbl.appendChild(tbody);
+  scrollWrap.appendChild(tbl);
+  const listBox = el('div',{class:'w98-pcbmon-list'}, scrollWrap);
+
+  // Detail (right)
+  const detailScroll = el('div',{class:'scroll'});
+  const detailBox = el('div',{class:'w98-pcbmon-detail'}, detailScroll);
+
+  const main = el('div',{class:'w98-pcbmon-main'}, listBox, detailBox);
+
+  // ========== Status bar ==========
+  const statusBar = el('div',{class:'w98-pcbmon-status'},
+    el('span',{}, 'Ready.'),
+    el('span',{}, el('b',{id:'pm-self'},'本进程 PID '+proc.pid))
+  );
+
+  // ========== Body container ==========
+  const bodyEl = el('div',{class:'w98-pcbmon-body'}, dash, main);
+  root.append(titlebar, menubar, toolbar, bodyEl, statusBar);
+  body.appendChild(root);
+
+  // ========== Helpers ==========
+  function fmtMs(ms){
+    if(ms<1000) return ms+'ms';
+    if(ms<60000) return (ms/1000).toFixed(1)+'s';
+    if(ms<3600000) return (ms/60000).toFixed(1)+'m';
+    return (ms/3600000).toFixed(1)+'h';
+  }
+  function fmtBytes(kb){
+    if(kb<1024) return kb+' KB';
+    return (kb/1024).toFixed(2)+' MB';
+  }
+  function bumpActivity(){ window._pcbActive = Date.now(); }
+  function tickClock(){
+    const d = new Date();
+    const pad = n=>String(n).padStart(2,'0');
+    titlebar.querySelector('#pm-clock').textContent =
+      pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+  }
+
+  // ========== Render ==========
+  let selectedPid = null;
+
+  function renderDash(){
+    const all = PM.psList();
+    const totalMem = PM.totalMem();
+    $('#pm-cnt', root).textContent = String(all.length);
+    $('#pm-cpu', root).textContent = PM.cpuPct.toFixed(1)+'%';
+    $('#pm-mem', root).textContent = totalMem + ' KB';
+    const isLive = PM.mode==='live';
+    statMode.classList.toggle('live', isLive);
+    statMode.classList.toggle('manual', !isLive);
+    $('#pm-mode', root).textContent = isLive?'LIVE':'MANUAL';
+    $('#pm-mode-lbl', root).textContent = isLive?'LIVE':'MANUAL';
+    btnStep.disabled = isLive;
+    btnPause.textContent = isLive?'Pause':'Run';
+  }
+
+  function renderTable(){
+    const all = PM.psList();
+    tbody.innerHTML = '';
+    if(all.length===0){
+      tbody.appendChild(el('tr',{},
+        el('td',{colspan:'8',class:'empty'},'(系统暂无进程)')
+      ));
+      return;
+    }
+    all.forEach(p=>{
+      const isSelf = p.pid === proc.pid;
+      const tr = el('tr',{
+        class: (selectedPid===p.pid?'sel':'') + (isSelf?' self':'')
+      },
+        el('td',{}, String(p.pid)),
+        el('td',{class:'col-u'}, PCB_USER),
+        el('td',{}, p.type),
+        el('td',{}, p.title + (isSelf?' ★':'')),
+        el('td',{}, el('span',{class:'st '+p.status}, p.status)),
+        el('td',{}, p.memKB+' KB'),
+        el('td',{}, fmtMs(p.cpuMs)),
+        el('td',{class:'col-p'}, PCB_PC)
+      );
+      tr.addEventListener('click', ()=>{
+        selectedPid = (selectedPid===p.pid) ? null : p.pid;
+        bumpActivity(); render();
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderDetail(){
+    detailScroll.innerHTML = '';
+    if(selectedPid===null){
+      detailScroll.appendChild(el('h4',{},'PCB Detail'));
+      detailScroll.appendChild(el('div',{class:'empty'},
+        '在左侧列表中选择一个进程，\n即可在此查看完整的进程控制块（PCB）数据。\n\n等价于在 MS-DOS 提示符下输入 PCB <PID>。'
+      ));
+      btnTerm.disabled = true;
+      return;
+    }
+    const info = PM.pcb(selectedPid);
+    if(!info){
+      detailScroll.appendChild(el('h4',{},'PCB Detail'));
+      detailScroll.appendChild(el('div',{class:'empty'},'该进程已退出，无法读取 PCB。'));
+      btnTerm.disabled = true;
+      return;
+    }
+    const isSelf = selectedPid === proc.pid;
+    detailScroll.appendChild(el('h4',{}, info.NAME));
+    detailScroll.appendChild(el('div',{class:'pid-tag'},
+      'PID '+info.PID + (isSelf?' · 本窗口 ★':'')
+    ));
+    const rows = [
+      ['PID',     String(info.PID)],
+      ['NAME',    info.NAME],
+      ['USER',    PCB_USER],
+      ['TYPE',    info.TYPE],
+      ['STATE',   info.STATE],
+      ['PC',      PCB_PC],
+      ['MEM_KB',  info.MEM_KB+' KB ('+fmtBytes(info.MEM_KB)+')'],
+      ['CPU_MS',  info.CPU_MS+'ms ('+fmtMs(info.CPU_MS)+')'],
+      ['CPU_%',   info.CPU_PCT+'%'],
+      ['PENDING', info.PENDING_MS+'ms'],
+      ['UPTIME',  fmtMs(info.UPTIME_MS)],
+    ];
+    rows.forEach(([k,v])=>{
+      detailScroll.appendChild(el('div',{class:'kv'},
+        el('span',{class:'key'}, k+' :'),
+        el('span',{class:'val'}, v)
+      ));
+    });
+    // Block / Wake
+    const actions = el('div',{class:'actions'});
+    const btnBlock = el('button',{disabled: info.STATE!=='Running'},
+      info.STATE==='Blocked'?'已 Blocked':'Block');
+    btnBlock.onclick = ()=>{
+      const r = PM.block(selectedPid); showTip(r); bumpActivity(); render();
+    };
+    const btnWake = el('button',{disabled: info.STATE!=='Blocked'}, 'Wake');
+    btnWake.onclick = ()=>{
+      const r = PM.wake(selectedPid); showTip(r); bumpActivity(); render();
+    };
+    actions.append(btnBlock, btnWake);
+    detailScroll.appendChild(actions);
+    btnTerm.disabled = isSelf;
+  }
+
+  function render(){
+    renderDash(); renderTable(); renderDetail();
+  }
+
+  // ========== Toolbar handlers ==========
+  btnPause.onclick = ()=>{
+    const newMode = PM.mode==='live'?'manual':'live';
+    const r = PM.setMode(newMode);
+    showTip(r); bumpActivity(); render();
+  };
+  btnStep.onclick = ()=>{
+    const r = PM.step();
+    showTip(r); bumpActivity(); render();
+  };
+  btnRefresh.onclick = ()=>{
+    showTip('已刷新'); bumpActivity(); render();
+  };
+  btnTerm.onclick = ()=>{
+    if(selectedPid===null || selectedPid===proc.pid) return;
+    const info = PM.pcb(selectedPid);
+    if(!info){ render(); return; }
+    PM.terminate(selectedPid);
+    showTip('已终止 PID '+selectedPid+' ('+info.NAME+')');
+    selectedPid = null;
+    bumpActivity(); render();
+  };
+
+  // ========== Initial render ==========
+  render();
+  tickClock();
+  appInterval(proc, render, 250);
+  appInterval(proc, tickClock, 1000);
+}
+
+
+/* ===================================================================
+   CALCULATOR
+   =================================================================== */
+function buildCalcMac(body, wm, yip, proc){
+  const root = el('div',{class:'calc-mac'});
+  const display = el('div',{class:'display'},'0');
+  const grid = el('div',{class:'grid'});
+  // mini status bar showing PID + MEM + CPU%
+  const status = el('div',{style:'padding:6px 14px;background:#1c1c1e;color:#aaa;font-size:10px;font-family:"Courier New",monospace;display:flex;justify-content:space-between;border-top:1px solid #333'});
+  root.append(display, grid, status);
+  body.appendChild(root);
+  const calc = {cur:'0', prev:null, op:null, fresh:true, eqCount:0};
+  const baseMem = 512;
+  proc.memKB = baseMem;
+  function bumpMem(delta){ proc.memKB = baseMem + calc.eqCount; }
+  function press(k){
+    window._calcActive = Date.now();
+    if(k>='0' && k<='9'){
+      if(calc.fresh){ calc.cur=k; calc.fresh=false; }
+      else calc.cur = calc.cur==='0'?k:calc.cur+k;
+    } else if(k==='.'){
+      if(calc.fresh){ calc.cur='0.'; calc.fresh=false; }
+      else if(!calc.cur.includes('.')) calc.cur+='.';
+    } else if(k==='C'){
+      // 撤销/清空 -> 释放内存 (重置 eqCount)
+      calc.cur='0'; calc.prev=null; calc.op=null; calc.fresh=true; calc.eqCount=0; bumpMem(0);
+    } else if(k==='±'){
+      calc.cur = (parseFloat(calc.cur)*-1).toString();
+    } else if(k==='%'){
+      calc.cur = (parseFloat(calc.cur)/100).toString();
+    } else if(['+','-','×','÷'].includes(k)){
+      if(calc.prev!==null && !calc.fresh) commit();
+      calc.op=k; calc.prev=parseFloat(calc.cur); calc.fresh=true;
+    } else if(k==='='){
+      commit(); calc.op=null; calc.prev=null; calc.fresh=true; calc.eqCount++; bumpMem(0);
+    }
+    display.textContent = fmt(calc.cur);
+    grid.querySelectorAll('.op').forEach(b=>b.classList.remove('active'));
+    if(['+','-','×','÷'].includes(k)) [...grid.querySelectorAll('button')].find(b=>b.textContent===k)?.classList.add('active');
+    refreshStatus();
+  }
+  function commit(){
+    const a=calc.prev, b=parseFloat(calc.cur);
+    let r=b;
+    if(calc.op==='+') r=a+b;
+    else if(calc.op==='-') r=a-b;
+    else if(calc.op==='×') r=a*b;
+    else if(calc.op==='÷') r=b===0?NaN:a/b;
+    calc.cur = isNaN(r)?'Error':String(r);
+  }
+  function fmt(s){ s=String(s); if(s.length>12) s=parseFloat(s).toExponential(6); return s; }
+  function refreshStatus(){
+    status.innerHTML = `<span>PID ${proc.pid} · ${proc.status}</span><span>MEM ${proc.memKB}KB · CPU ${PM.cpuPct.toFixed(1)}%</span>`;
+  }
+  const keys = [
+    ['C','±','%','÷'],
+    ['7','8','9','×'],
+    ['4','5','6','-'],
+    ['1','2','3','+'],
+    ['0','.','=']   // 0 用 .zero 类跨 2 列 → 实际占 4 列：0(2)+.(1)+=(1)
+  ];
+  keys.forEach(row=>row.forEach(k=>{
+    let cls='';
+    if(['÷','×','-','+','='].includes(k)) cls='op';
+    else if(['C','±','%'].includes(k)) cls='fn';
+    const b = el('button',{class:cls,onclick:()=>press(k)},k);
+    if(k==='0') b.classList.add('zero');
+    grid.appendChild(b);
+  }));
+  body.addEventListener('keydown',e=>{
+    if(/[0-9]/.test(e.key)) press(e.key);
+    else if(e.key==='.') press('.');
+    else if(e.key==='+') press('+');
+    else if(e.key==='-') press('-');
+    else if(e.key==='*') press('×');
+    else if(e.key==='/') press('÷');
+    else if(e.key==='Enter'||e.key==='=') press('=');
+    else if(e.key==='Backspace') press('C');
+    else if(e.key.toLowerCase()==='c') press('C');
+  });
+  appInterval(proc, refreshStatus, 500);
+  refreshStatus();
+}
+function buildCalcWin(body, wm, yip, proc){
+  const root = el('div',{class:'calc-w98'});
+  const menu = el('div',{class:'menu'},
+    el('span',{onclick:()=>showTip('复制当前结果')},'编辑(E)'),
+    el('span',{onclick:()=>showTip('查看帮助')},'帮助(H)'),
+  );
+  const display = el('div',{class:'display-w98'},'0');
+  const grid = el('div',{class:'grid'});
+  const status = el('div',{style:'padding:2px 6px;font-size:11px;font-family:"Courier New",monospace;color:#000;border-top:1px solid #808080;background:#c0c0c0;display:flex;justify-content:space-between'});
+  root.append(menu, display, grid, status);
+  body.appendChild(root);
+  const calc={cur:'0',prev:null,op:null,fresh:true,eqCount:0};
+  const baseMem=512; proc.memKB=baseMem;
+  function refreshStatus(){ status.innerHTML = `<span>PID ${proc.pid}·${proc.status}</span><span>MEM ${proc.memKB}KB·CPU ${PM.cpuPct.toFixed(1)}%</span>`; }
+  function press(k){
+    window._calcActive = Date.now();
+    if(k>='0' && k<='9'){
+      if(calc.fresh){calc.cur=k;calc.fresh=false;}
+      else calc.cur = calc.cur==='0'?k:calc.cur+k;
+    } else if(k==='.'){
+      if(calc.fresh){calc.cur='0.';calc.fresh=false;}
+      else if(!calc.cur.includes('.')) calc.cur+='.';
+    } else if(k==='C'){calc.cur='0';calc.prev=null;calc.op=null;calc.fresh=true;calc.eqCount=0;proc.memKB=baseMem;} // 撤销/清空 释放内存
+    else if(k==='CE'){calc.cur='0';calc.fresh=true;}
+    else if(k==='←'){calc.cur=calc.cur.length>1?calc.cur.slice(0,-1):'0';}
+    else if(k==='±'){calc.cur=(parseFloat(calc.cur)*-1).toString();}
+    else if(k==='1/x'){calc.cur=calc.cur==='0'?'Error':(1/parseFloat(calc.cur)).toString();}
+    else if(k==='√'){calc.cur=Math.sqrt(parseFloat(calc.cur)).toString();}
+    else if(k==='%'){calc.cur=(parseFloat(calc.cur)/100).toString();}
+    else if(['+','-','*','/'].includes(k)){
+      if(calc.prev!==null && !calc.fresh) commit();
+      calc.op=k; calc.prev=parseFloat(calc.cur); calc.fresh=true;
+    } else if(k==='='){commit();calc.op=null;calc.prev=null;calc.fresh=true;calc.eqCount++;proc.memKB=baseMem+calc.eqCount;}
+    display.textContent = fmt(calc.cur);
+    refreshStatus();
+  }
+  function commit(){
+    const a=calc.prev, b=parseFloat(calc.cur), op=calc.op;
+    let r=b;
+    if(op==='+') r=a+b;
+    else if(op==='-') r=a-b;
+    else if(op==='*') r=a*b;
+    else if(op==='/') r=b===0?NaN:a/b;
+    calc.cur = isNaN(r)?'Error':String(r);
+  }
+  function fmt(s){s=String(s); if(s.length>14) s=parseFloat(s).toExponential(6); return s;}
+  const keys = [
+    ['C','CE','←','±','√'],
+    ['7','8','9','/','%'],
+    ['4','5','6','*','1/x'],
+    ['1','2','3','-','back'],
+    ['0','.','=','+','']   // 0 和 = 各跨 2 列（用 span 类）；最后 1 列为空
+  ];
+  keys.forEach(row=>row.forEach((k,idx)=>{
+    if(k===''||k==='back') { grid.appendChild(el('span')); return; }
+    const b = el('button',{onclick:()=>press(k)},k);
+    if(['*','/','-','+','='].includes(k)) b.classList.add('op');
+    if(k==='0') b.classList.add('w-zero');    // 0 跨 2 列
+    if(k==='=') b.classList.add('w-eq');      // = 跨 2 列
+    grid.appendChild(b);
+  }));
+  appInterval(proc, refreshStatus, 500);
+  refreshStatus();
+}
+
+/* ===================================================================
+   MINESWEEPER
+   =================================================================== */
+function buildMineMac(body, wm, yip, proc){
+  const root = el('div',{class:'mine-mac'});
+  const toolbar = el('div',{class:'toolbar'},
+    el('div',{class:'stat', id:'m-stat-mine'},'010'),
+    el('div',{class:'face', id:'m-face'},'🙂'),
+    el('div',{class:'stat', id:'m-stat-time'},'000'),
+  );
+  const grid = el('div',{class:'grid'});
+  const status = el('div',{style:'flex:0 0 auto;padding:6px 10px;font-size:11px;font-family:"Courier New",monospace;color:#555;display:flex;justify-content:space-between'});
+  root.append(toolbar, grid, status);
+  body.appendChild(root);
+  const ROWS=10, COLS=10, MINES=15;
+  const baseMem=1024;
+  proc.memKB = baseMem;
+  function refreshStatus(){ status.innerHTML = `<span>PID ${proc.pid}·${proc.status}</span><span>STEP ${state?.steps||0}·MEM ${proc.memKB}KB·CPU ${PM.cpuPct.toFixed(1)}%</span>`; }
+  let board, state, time, timer;
+  function newGame(){
+    // 重开 -> 释放内存
+    proc.memKB = baseMem;
+    // 布雷：使用确定性伪随机，避免 Math.random
+    let seed = (proc.pid*7919 + 2473) | 0;
+    function r(){ seed = (seed*1103515245 + 12345) & 0x7fffffff; return seed; }
+    board=Array.from({length:ROWS},()=>Array(COLS).fill(null).map(()=>({mine:false,open:false,flag:false,n:0})));
+    let placed=0;
+    while(placed<MINES){const rr=r()%ROWS, cc=r()%COLS;
+      if(!board[rr][cc].mine){board[rr][cc].mine=true;placed++;}
+    }
+    for(let rr=0;rr<ROWS;rr++)for(let cc=0;cc<COLS;cc++)if(!board[rr][cc].mine){
+      let n=0; for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){const nr=rr+dr,nc=cc+dc;if(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS&&board[nr][nc].mine)n++;}
+      board[rr][cc].n=n;
+    }
+    state={over:false,win:false,flagCount:0,face:'🙂',steps:0};
+    time=0; clearInterval(timer);
+    render();
+    if(timer)clearInterval(timer); // 重开时先清旧计时器，避免叠加
+    timer=appInterval(proc, ()=>{ if(!state.over){time++; upd(); } },1000);
+    refreshStatus();
+  }
+  function upd(){
+    $('#m-stat-mine',root).textContent = String(MINES-state.flagCount).padStart(3,'0');
+    $('#m-stat-time',root).textContent = String(Math.min(time,999)).padStart(3,'0');
+    $('#m-face',root).textContent = state.face;
+    refreshStatus();
+  }
+  function open(r,c){
+    if(state.over) return;
+    if(board[r][c].flag) return;
+    if(board[r][c].open) return;
+    if(board[r][c].mine){ state.over=true; state.face='😵'; reveal(); timer&&clearInterval(timer); upd(); return; }
+    // 每走一步 +1 KiB
+    state.steps++;
+    proc.memKB = baseMem + state.steps;
+    window._mineActive = Date.now();
+    flood(r,c);
+    checkWin();
+  }
+  function flood(r,c){
+    if(r<0||c<0||r>=ROWS||c>=COLS) return;
+    if(board[r][c].open||board[r][c].flag) return;
+    board[r][c].open=true;
+    if(board[r][c].n===0){
+      for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++)if(dr||dc) flood(r+dr,c+dc);
+    }
+    render();
+  }
+  function toggleFlag(r,c){
+    if(state.over || board[r][c].open) return;
+    board[r][c].flag = !board[r][c].flag;
+    state.flagCount += board[r][c].flag?1:-1;
+    render(); upd();
+  }
+  function checkWin(){
+    let safe=0;
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)if(board[r][c].open) safe++;
+    if(safe===ROWS*COLS-MINES){ state.win=true; state.over=true; state.face='😎'; timer&&clearInterval(timer); upd(); }
+  }
+  function reveal(){
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+      if(board[r][c].mine) board[r][c].open=true;
+    }
+    render();
+  }
+  function render(){
+    // ★ 行列都显式给出：只设列时行高会被 cell 的固有尺寸/aspect-ratio 撑爆，导致底部被裁
+    grid.style.gridTemplateColumns = `repeat(${COLS},minmax(0,1fr))`;
+    grid.style.gridTemplateRows    = `repeat(${ROWS},minmax(0,1fr))`;
+    grid.innerHTML='';
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+      const cell=board[r][c];
+      const div = el('div',{class:'cell'});
+      if(cell.open){
+        div.classList.add('open');
+        if(cell.mine){ div.classList.add('mine'); }
+        else if(cell.n>0) { div.classList.add('n'+cell.n); div.textContent = cell.n; }
+      } else if(cell.flag){ div.classList.add('flag'); }
+      const click = (e)=>{ e.preventDefault(); if(e.button===2) toggleFlag(r,c); else {state.face='😮';upd();open(r,c);} };
+      div.addEventListener('click', click);
+      div.addEventListener('contextmenu', click);
+      grid.appendChild(div);
+    }
+  }
+  $('#m-face',root).addEventListener('click', ()=>{ newGame(); });
+  appInterval(proc, refreshStatus, 500);
+  newGame();
+}
+function buildMineWin(body, wm, yip, proc){
+  // ★ 修复：原签名只有 (body)，漏掉 wm/yip/proc，导致 line 2441 'proc.memKB=baseMem' 抛 ReferenceError，
+  //        进而 newGame 不执行、grid 0 个 cell、点击无反应，并造成任务栏出现"僵尸扫雷按钮"。
+  const root = el('div',{class:'mine-w98'});
+  const tb = el('div',{class:'toolbar'},
+    el('div',{class:'display-led', id:'mw-stat-mine'},'015'),
+    el('div',{class:'face-w', id:'mw-face'},'🙂'),
+    el('div',{class:'display-led', id:'mw-stat-time'},'000'),
+  );
+  const grid = el('div',{class:'grid-w'});
+  const status = el('div',{style:'flex:0 0 auto;padding:2px 6px;border-top:1px solid #808080;font-size:11px;font-family:"Courier New",monospace;color:#000;display:flex;justify-content:space-between;background:#c0c0c0'});
+  root.append(tb, grid, status);
+  body.appendChild(root);
+  const ROWS=10, COLS=10, MINES=15;
+  const baseMem=1024; proc.memKB=baseMem;
+  function refreshStatus(){ status.innerHTML = `<span>PID ${proc.pid}·${proc.status}</span><span>STEP ${state?.steps||0}·MEM ${proc.memKB}KB·CPU ${PM.cpuPct.toFixed(1)}%</span>`; }
+  let board, state, time, timer;
+  function newGame(){
+    // 重开 -> 释放内存
+    proc.memKB = baseMem;
+    let seed = (proc.pid*7919 + 2473) | 0;
+    function r(){ seed = (seed*1103515245 + 12345) & 0x7fffffff; return seed; }
+    board=Array.from({length:ROWS},()=>Array(COLS).fill(null).map(()=>({mine:false,open:false,flag:false,n:0})));
+    let placed=0;
+    while(placed<MINES){const rr=r()%ROWS, cc=r()%COLS;
+      if(!board[rr][cc].mine){board[rr][cc].mine=true;placed++;}
+    }
+    for(let rr=0;rr<ROWS;rr++)for(let cc=0;cc<COLS;cc++)if(!board[rr][cc].mine){
+      let n=0; for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){const nr=rr+dr,nc=cc+dc;if(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS&&board[nr][nc].mine)n++;}
+      board[rr][cc].n=n;
+    }
+    state={over:false,win:false,flagCount:0,face:'🙂',steps:0};
+    time=0; clearInterval(timer);
+    render();
+    if(timer)clearInterval(timer); // 重开时先清旧计时器，避免叠加
+    timer=appInterval(proc, ()=>{ if(!state.over){time++; upd(); } },1000);
+    refreshStatus();
+  }
+  function upd(){
+    $('#mw-stat-mine',root).textContent = String(MINES-state.flagCount).padStart(3,'0');
+    $('#mw-stat-time',root).textContent = String(Math.min(time,999)).padStart(3,'0');
+    $('#mw-face',root).textContent = state.face;
+    refreshStatus();
+  }
+  function open(r,c){
+    if(state.over) return;
+    if(board[r][c].flag) return;
+    if(board[r][c].open) return;
+    if(board[r][c].mine){ state.over=true; state.face='😵'; reveal(); timer&&clearTimeout(timer); clearInterval(timer); upd(); return; }
+    state.steps++; proc.memKB=baseMem+state.steps; window._mineActive=Date.now();
+    flood(r,c);
+    checkWin();
+  }
+  function flood(r,c){
+    if(r<0||c<0||r>=ROWS||c>=COLS) return;
+    if(board[r][c].open||board[r][c].flag) return;
+    board[r][c].open=true;
+    if(board[r][c].n===0){
+      for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++)if(dr||dc) flood(r+dr,c+dc);
+    }
+    render();
+  }
+  function toggleFlag(r,c){
+    if(state.over || board[r][c].open) return;
+    board[r][c].flag = !board[r][c].flag;
+    state.flagCount += board[r][c].flag?1:-1;
+    render(); upd();
+  }
+  function checkWin(){
+    let safe=0;
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)if(board[r][c].open) safe++;
+    if(safe===ROWS*COLS-MINES){ state.win=true; state.over=true; state.face='😎'; timer&&clearTimeout(timer); clearInterval(timer); upd(); }
+  }
+  function reveal(){
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+      if(board[r][c].mine) board[r][c].open=true;
+    }
+    render();
+  }
+  function render(){
+    // ★ 行列都显式给出：只设列时行高会被 cell 的固有尺寸/aspect-ratio 撑爆，导致底部被裁
+    grid.style.gridTemplateColumns = `repeat(${COLS},minmax(0,1fr))`;
+    grid.style.gridTemplateRows    = `repeat(${ROWS},minmax(0,1fr))`;
+    grid.innerHTML='';
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+      const cell=board[r][c];
+      const div = el('div',{class:'cell-w'});
+      if(cell.open){
+        div.classList.add('open');
+        if(cell.mine) { div.classList.add('mine-w'); div.textContent='*'; }
+        else if(cell.n>0) { div.classList.add('n'+cell.n); div.textContent = cell.n; }
+      } else if(cell.flag){ div.textContent='⚑'; div.style.color='#f00'; }
+      const click = (e)=>{ e.preventDefault(); if(e.button===2) toggleFlag(r,c); else {state.face='😮';upd();open(r,c);} };
+      div.addEventListener('click', click);
+      div.addEventListener('contextmenu', click);
+      grid.appendChild(div);
+    }
+  }
+  $('#mw-face',root).addEventListener('click', ()=>{ newGame(); });
+  appInterval(proc, refreshStatus, 500);
+  newGame();
+}
+
+/* ===================================================================
+   TERMINAL
+   =================================================================== */
+
+/* ===================================================================
+   PAINT (画图)
+   =================================================================== */
+function buildPaintMac(body, wm, yip, proc){
+  const root = document.createElement('div');
+  root.style.cssText = 'display:flex;flex-direction:column;height:100%;background:linear-gradient(180deg,#fafafa,#e8e8ea);font-family:-apple-system,sans-serif;';
+  // 工具栏
+  const toolbar = document.createElement('div');
+  toolbar.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(255,255,255,.85);backdrop-filter:blur(10px);border-bottom:1px solid rgba(0,0,0,.1);';
+  const colors = ['#000000','#ffffff','#ff3b30','#ff9500','#ffcc00','#34c759','#5ac8fa','#5856d6','#af52de','#8e8e93'];
+  const sizeLabel = document.createElement('span');
+  sizeLabel.textContent = '粗细:';
+  sizeLabel.style.cssText = 'font-size:12px;color:#333;';
+  const sizeSlider = document.createElement('input');
+  sizeSlider.type = 'range'; sizeSlider.min = '1'; sizeSlider.max = '30'; sizeSlider.value = '4';
+  sizeSlider.style.cssText = 'width:100px;';
+  toolbar.appendChild(sizeLabel);
+  toolbar.appendChild(sizeSlider);
+  const swatchWrap = document.createElement('div');
+  swatchWrap.style.cssText = 'display:flex;gap:4px;margin-left:8px;border-left:1px solid #ccc;padding-left:12px;';
+  let curColor = colors[0];
+  colors.forEach(c=>{
+    const sw = document.createElement('div');
+    sw.style.cssText = `width:18px;height:18px;border-radius:50%;background:${c};border:2px solid ${c===curColor?'#000':'#ddd'};cursor:pointer;`;
+    sw.addEventListener('click',()=>{
+      curColor = c;
+      swatchWrap.querySelectorAll('div').forEach(x=>x.style.border='2px solid '+x.style.background);
+      sw.style.border = '2px solid #000';
+    });
+    swatchWrap.appendChild(sw);
+  });
+  toolbar.appendChild(swatchWrap);
+  const undoBtn = document.createElement('button');
+  undoBtn.textContent = '↶ 撤销';
+  undoBtn.style.cssText = 'padding:4px 12px;border:1px solid #ccc;background:#fff;border-radius:6px;cursor:pointer;font-size:12px;';
+  const clearBtn = document.createElement('button');
+  clearBtn.textContent = '🗑 清空';
+  clearBtn.style.cssText = 'padding:4px 12px;border:1px solid #ccc;background:#fff;border-radius:6px;cursor:pointer;font-size:12px;margin-left:auto;';
+  toolbar.appendChild(undoBtn);
+  toolbar.appendChild(clearBtn);
+  // 状态栏
+  const status = document.createElement('div');
+  status.style.cssText = 'padding:5px 12px;font-size:11px;font-family:"Courier New",monospace;color:#555;background:#f0f0f0;border-top:1px solid #ddd;display:flex;justify-content:space-between';
+  // 画布
+  const canvasWrap = document.createElement('div');
+  canvasWrap.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;background:#e8e8ea;padding:12px;overflow:auto;';
+  const canvas = document.createElement('canvas');
+  canvas.width = 680; canvas.height = 420;
+  canvas.style.cssText = 'background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:crosshair;';
+  const ctx = canvas.getContext('2d');
+  if(ctx){ ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height); }
+  canvasWrap.appendChild(canvas);
+  root.appendChild(toolbar);
+  root.appendChild(canvasWrap);
+  root.appendChild(status);
+  body.appendChild(root);
+
+  // 笔画历史 + 内存模型
+  const baseMem = 8192;
+  proc.memKB = baseMem;
+  let strokes = 0, dots = 0;
+  const history = []; // 每笔 [{x,y,r,color}]
+  function pushStroke(pt){
+    history.push(pt);
+    strokes++;
+    // 每次落笔 +1KB，每点 +1KB（简化版，对应速查表精神）
+    proc.memKB = baseMem + strokes + dots;
+    refreshStatus();
+  }
+  function refreshStatus(){
+    status.innerHTML = `<span>PID ${proc.pid} · ${proc.status}</span><span>笔 ${strokes} · 点 ${dots} · MEM ${proc.memKB}KB · CPU ${PM.cpuPct.toFixed(1)}%</span>`;
+  }
+
+  let drawing = false, lastX = 0, lastY = 0;
+  canvas.addEventListener('mousedown',(e)=>{
+    e.stopPropagation();
+    window._paintActive = Date.now();
+    drawing = true;
+    const r = canvas.getBoundingClientRect();
+    lastX = e.clientX - r.left;
+    lastY = e.clientY - r.top;
+    dots++;
+    pushStroke({x:lastX,y:lastY,r:parseInt(sizeSlider.value),color:curColor});
+    ctx.fillStyle = curColor;
+    ctx.beginPath();
+    ctx.arc(lastX,lastY,parseInt(sizeSlider.value)/2,0,Math.PI*2);
+    ctx.fill();
+  });
+  canvas.addEventListener('mousemove',(e)=>{
+    if(!drawing) return;
+    e.stopPropagation();
+    window._paintActive = Date.now();
+    const r = canvas.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    ctx.strokeStyle = curColor;
+    ctx.lineWidth = parseInt(sizeSlider.value);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    lastX = x; lastY = y;
+  });
+  ['mouseup','mouseleave'].forEach(ev=>{
+    canvas.addEventListener(ev, ()=>{
+      drawing = false;
+    });
+  });
+
+  undoBtn.addEventListener('click',()=>{
+    if(history.length===0){ showTip('没有可撤销的笔画'); return; }
+    history.pop();
+    strokes = Math.max(0, strokes-1);
+    // 重绘
+    ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    history.forEach(p=>{
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,p.r/2,0,Math.PI*2);
+      ctx.fill();
+    });
+    proc.memKB = baseMem + strokes + dots;
+    refreshStatus();
+  });
+  clearBtn.addEventListener('click',()=>{
+    if(history.length===0 && dots===0) return;
+    history.length = 0;
+    strokes = 0; dots = 0;
+    ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    proc.memKB = baseMem;  // 清空 → 释放到基数
+    refreshStatus();
+    showTip('画布已清空，内存已释放');
+  });
+
+  refreshStatus();
+  appInterval(proc, refreshStatus, 500);
+}
+function buildPaintWin(body, wm, yip, proc){
+  // Win98 风格画图（更朴素）
+  const root = document.createElement('div');
+  root.style.cssText = 'display:flex;flex-direction:column;height:100%;background:#c0c0c0;font-family:"MS Sans Serif",Tahoma,sans-serif;font-size:12px;';
+  // 菜单
+  const menu = document.createElement('div');
+  menu.style.cssText = 'padding:2px 4px;border-bottom:1px solid #808080;background:#c0c0c0;';
+  ['文件(F)','编辑(E)','查看(V)','图像(I)','颜色(C)','帮助(H)'].forEach(t=>{
+    const s = document.createElement('span');
+    s.textContent = t; s.style.cssText = 'margin-right:12px;cursor:pointer;padding:1px 4px;';
+    s.addEventListener('click',()=>showTip(t+' 菜单'));
+    s.addEventListener('mouseenter',()=>s.style.background='#000080');
+    s.addEventListener('mouseleave',()=>s.style.background='transparent');
+    s.addEventListener('mouseenter',()=>s.style.color='#fff');
+    s.addEventListener('mouseleave',()=>s.style.color='#000');
+    menu.appendChild(s);
+  });
+  // 工具栏
+  const tb = document.createElement('div');
+  tb.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 6px;background:#c0c0c0;border-bottom:1px solid #808080;';
+  const colors = ['#000000','#7f7f7f','#880015','#ed1c24','#ff7f27','#fff200','#22b14c','#00a2e8','#3f48cc','#a349a4'];
+  const swatchWrap = document.createElement('div');
+  swatchWrap.style.cssText = 'display:grid;grid-template-columns:repeat(10,16px);gap:1px;padding:2px;background:#fff;border:1px solid #808080;';
+  let curColor = '#000000';
+  colors.forEach(c=>{
+    const sw = document.createElement('div');
+    sw.style.cssText = `width:16px;height:16px;background:${c};cursor:pointer;`;
+    sw.addEventListener('click',()=>{ curColor = c; swatchWrap.querySelectorAll('div').forEach(x=>x.style.outline=''); sw.style.outline='2px solid #000'; });
+    swatchWrap.appendChild(sw);
+  });
+  tb.appendChild(swatchWrap);
+  // 清空按钮
+  const clearBtn = document.createElement('button');
+  clearBtn.textContent = '清空';
+  clearBtn.style.cssText = 'padding:2px 10px;border-top:1px solid #fff;border-left:1px solid #fff;border-right:1px solid #404040;border-bottom:1px solid #404040;background:#c0c0c0;cursor:pointer;margin-left:auto;';
+  clearBtn.addEventListener('click',()=>{ ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height); proc.memKB=8192; history.length=0; strokes=0; dots=0; refreshStatus(); showTip('画布已清空'); });
+  tb.appendChild(clearBtn);
+  // 状态栏
+  const status = document.createElement('div');
+  status.style.cssText = 'padding:2px 6px;border-top:1px solid #fff;font-family:"Lucida Console",monospace;font-size:11px;';
+  // 画布
+  const canvasWrap = document.createElement('div');
+  canvasWrap.style.cssText = 'flex:1;background:#808080;padding:8px;display:flex;align-items:center;justify-content:center;overflow:auto;';
+  const c = document.createElement('canvas');
+  c.width = 640; c.height = 380;
+  c.style.cssText = 'background:#fff;border:1px solid #fff;cursor:crosshair;';
+  const ctx = c.getContext('2d');
+  if(ctx){ ctx.fillStyle = '#fff'; ctx.fillRect(0,0,c.width,c.height); }
+  canvasWrap.appendChild(c);
+  root.appendChild(menu);
+  root.appendChild(tb);
+  root.appendChild(canvasWrap);
+  root.appendChild(status);
+  body.appendChild(root);
+
+  const baseMem = 8192;
+  proc.memKB = baseMem;
+  let strokes = 0, dots = 0;
+  const history = [];
+  function refreshStatus(){
+    status.innerHTML = `PID ${proc.pid} · ${proc.status}  |  笔 ${strokes} · 点 ${dots} · MEM ${proc.memKB}KB · CPU ${PM.cpuPct.toFixed(1)}%`;
+  }
+  let drawing = false, lx=0, ly=0;
+  c.addEventListener('mousedown',(e)=>{
+    e.stopPropagation();
+    window._paintActive = Date.now();
+    drawing = true;
+    const r = c.getBoundingClientRect();
+    lx = e.clientX-r.left; ly = e.clientY-r.top;
+    dots++; strokes++;
+    history.push({x:lx,y:ly,r:2,color:curColor});
+    proc.memKB = baseMem + strokes + dots;
+    ctx.fillStyle = curColor;
+    ctx.fillRect(lx,ly,2,2);
+    refreshStatus();
+  });
+  c.addEventListener('mousemove',(e)=>{
+    if(!drawing) return;
+    e.stopPropagation();
+    window._paintActive = Date.now();
+    const r = c.getBoundingClientRect();
+    const x = e.clientX-r.left, y = e.clientY-r.top;
+    ctx.strokeStyle = curColor; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(lx,ly); ctx.lineTo(x,y); ctx.stroke();
+    lx = x; ly = y;
+  });
+  ['mouseup','mouseleave'].forEach(ev=>c.addEventListener(ev,()=>drawing=false));
+  refreshStatus();
+  appInterval(proc, refreshStatus, 500);
+}
+
+/* ===================================================================
+   虚拟文件系统 VFS —— 终端 cd / mkdir(MD) / echo> / type(cat) 的真实数据源
+   内部统一以 "/" 分隔存储（Win 盘符作为首段：C:/WINDOWS）；
+   Win 侧键名统一大写（DOS 大小写不敏感），显示时还原成 C:\WINDOWS
+   =================================================================== */
+const virtualFS = {};                      /* Win98 虚拟文件表：路径 -> 节点 */
+const VFS = { mac:{}, win: virtualFS };    /* macOS 与 Win98 各自一棵树 */
+
+/* 路径归一化：\ -> /，压缩重复斜杠，去尾部斜杠（保留根 "/"） */
+function vfsNorm(p){
+  let s = String(p==null?'':p).trim().replace(/\\/g,'/').replace(/\/{2,}/g,'/');
+  if(s.length>1) s = s.replace(/\/+$/,'');
+  return s;
+}
+/* 树键：Win 侧大写（大小写不敏感），macOS 侧保留原样 */
+function vfsKey(style,p){ const s=vfsNorm(p); return style==='win'?s.toUpperCase():s; }
+function vfsParts(p){ return vfsNorm(p).split('/').filter(x=>x!==''); }
+function vfsBuild(style, parts){
+  if(style==='win') return parts.length? parts.join('/') : 'C:';
+  return '/'+parts.join('/');
+}
+/* 展示形态：Win 还原反斜杠，macOS 保持斜杠 */
+function vfsShow(style,p){
+  const s=vfsNorm(p);
+  if(style==='win') return (s==='C:'?'C:\\':s.replace(/\//g,'\\'));
+  return s;
+}
+function vfsTree(style){ return style==='win'?VFS.win:VFS.mac; }
+function vfsGet(style,p){ return vfsTree(style)[vfsKey(style,p)]||null; }
+
+/* 路径解析：支持 ~ / . / .. / 绝对路径 / Win 盘符 */
+function vfsResolve(style, cur, arg){
+  const curParts = vfsParts(cur);
+  let a = (arg==null?'':String(arg).trim().replace(/\\/g,'/'));
+  if(a==='') return vfsBuild(style, curParts.length?curParts:(style==='win'?['C:']:[]));
+  let start;
+  if(a==='~'||a.indexOf('~/')===0){
+    start = vfsParts(style==='win'?USER.winHome:USER.home);
+    a = a.length>1?a.slice(2):'';
+  } else if(style==='win' && /^[A-Za-z]:/.test(a)){
+    start=[a.slice(0,2).toUpperCase()]; a=a.slice(2).replace(/^\//,'');
+  } else if(a.charAt(0)==='/'){
+    start = style==='win'?[curParts[0]||'C:']:[];
+    a=a.replace(/^\//,'');
+  } else start = curParts.slice();
+  a.split('/').forEach(seg=>{
+    if(seg===''||seg==='.') return;
+    if(seg==='..'){ if(style==='win'? start.length>1 : start.length) start.pop(); return; }
+    start.push(seg);
+  });
+  return vfsBuild(style,start);
+}
+/* 自动补齐缺失的父目录 */
+function vfsEnsureParents(style, parts){
+  const t=vfsTree(style);
+  for(let i=1;i<parts.length;i++){
+    const k=vfsKey(style, vfsBuild(style,parts.slice(0,i)));
+    if(!t[k]) t[k]={type:'dir',name:parts[i-1],content:''};
+  }
+}
+function vfsMkdir(style,path){
+  const t=vfsTree(style), p=vfsNorm(path), parts=vfsParts(p);
+  if(!parts.length) return {ok:false,msg:'无法创建根目录'};
+  if(t[vfsKey(style,p)]) return {ok:false,msg:'目录已存在: '+vfsShow(style,p)};
+  vfsEnsureParents(style,parts);
+  t[vfsKey(style,p)]={type:'dir',name:parts[parts.length-1],content:''};
+  return {ok:true,msg:'已创建目录 '+vfsShow(style,p)};
+}
+function vfsWrite(style,path,content){
+  const t=vfsTree(style), p=vfsNorm(path), parts=vfsParts(p);
+  if(!parts.length) return {ok:false,msg:'无效的文件名'};
+  const k=vfsKey(style,p);
+  if(t[k] && t[k].type==='dir') return {ok:false,msg:vfsShow(style,p)+' 是一个目录'};
+  vfsEnsureParents(style,parts);
+  const existed=!!t[k];
+  t[k]={type:'file',name:parts[parts.length-1],content:String(content)};
+  return {ok:true,msg:(existed?'已覆盖文件 ':'已写入文件 ')+vfsShow(style,p)+'  ('+String(content).length+' 字节)'};
+}
+/* 列目录：返回 {dirs,files} / {file,node} / null(不存在) */
+function vfsList(style,path){
+  const t=vfsTree(style), pk=vfsKey(style,path);
+  if(!t[pk]) return null;
+  if(t[pk].type==='file') return {file:true, node:t[pk]};
+  const dirs=[], files=[];
+  Object.keys(t).forEach(k=>{
+    const n=t[k];
+    const parentKey = vfsKey(style, vfsBuild(style, vfsParts(k).slice(0,-1)));
+    if(parentKey!==pk) return;
+    (n.type==='dir'?dirs:files).push(n);
+  });
+  const cmp=(a,b)=>String(a.name).localeCompare(String(b.name));
+  dirs.sort(cmp); files.sort(cmp);
+  return {dirs,files};
+}
+/* 解析重定向：echo 文本 > file  /  echo 文本 >> file */
+function splitRedirect(raw){
+  const m = String(raw).match(/^(.*?)\s*(>>|>)\s*(.+)$/);
+  if(!m) return null;
+  return {body:m[1].trim(), file:m[3].trim(), append:m[2]==='>>'};
+}
+/* 初始化种子目录（macOS 主目录 + Win98 C: 盘） */
+function vfsSeed(){
+  const md=(t,p,name)=>{ t[vfsNorm(p)]={type:'dir',name:name,content:''}; };
+  const mf=(t,p,name,c)=>{ t[vfsNorm(p)]={type:'file',name:name,content:c}; };
+  const home = USER.home;
+  md(VFS.mac,'/','/');
+  md(VFS.mac,'/Users','Users');
+  md(VFS.mac, home, USER.name);
+  md(VFS.mac, home+'/Documents','Documents');
+  md(VFS.mac, home+'/Downloads','Downloads');
+  md(VFS.mac, home+'/Desktop','Desktop');
+  md(VFS.mac, home+'/Music','Music');
+  md(VFS.mac,'/Applications','Applications');
+  mf(VFS.mac, home+'/note.txt','note.txt','我是张三');
+  mf(VFS.mac, home+'/Documents/README.txt','README.txt','欢迎使用 macOS 终端演示。\n输入 help 查看全部命令。');
+  mf(VFS.mac, home+'/Desktop/hello.txt','hello.txt','Hello, '+USER.full+'!');
+
+  md(VFS.win,'C:','C:');
+  md(VFS.win,'C:/WINDOWS','WINDOWS');
+  md(VFS.win,'C:/WINDOWS/SYSTEM','SYSTEM');
+  md(VFS.win,'C:/WINDOWS/SYSTEM32','SYSTEM32');
+  md(VFS.win,'C:/PROGRAM FILES','PROGRAM FILES');
+  md(VFS.win,'C:/MY DOCUMENTS','MY DOCUMENTS');
+  md(VFS.win,'C:/GAMES','GAMES');
+  mf(VFS.win,'C:/AUTOEXEC.BAT','AUTOEXEC.BAT','@ECHO OFF\nPATH C:\\WINDOWS;C:\\WINDOWS\\COMMAND');
+  mf(VFS.win,'C:/CONFIG.SYS','CONFIG.SYS','DEVICE=C:\\WINDOWS\\HIMEM.SYS');
+  mf(VFS.win,'C:/WINDOWS/README.TXT','README.TXT','Windows 98 演示系统');
+}
+vfsSeed();
+
+function buildTermMac(body, wm, yip, proc){
+  const root = el('div',{class:'term-mac'});
+  const title = el('div',{class:'term-title'},
+    el('span',{class:'dot r'}), el('span',{class:'dot y'}), el('span',{class:'dot g'}),
+    el('span',{},'  '+USER.name+'@'+USER.macHost+' — bash — 80×24')
+  );
+  const out = el('div',{class:'term-body'});
+  const promptEl = el('span',{class:'prompt'},USER.name+'@'+USER.macHost+' ~ $');
+  const inp = el('div',{class:'term-input'},
+    promptEl,
+    el('input',{type:'text',autocomplete:'off',spellcheck:false})
+  );
+  root.append(title, out, inp);
+  body.appendChild(root);
+  const input = inp.querySelector('input');
+  let history=[], hIdx=-1;
+  /* ★ 真实当前路径，初始为用户主目录 */
+  let currentPath = vfsNorm(USER.home);
+  const HOME_KEY = vfsKey('mac', USER.home);
+  function updPrompt(){
+    let show;
+    if(vfsKey('mac',currentPath)===HOME_KEY) show='~';
+    else if(vfsNorm(currentPath).indexOf(vfsNorm(USER.home)+'/')===0) show='~'+currentPath.slice(vfsNorm(USER.home).length);
+    else show = currentPath;
+    promptEl.textContent = USER.name+'@'+USER.macHost+' '+show+' $';
+  }
+  updPrompt();
+  /* ★ 初始化本终端的虚拟文件表 virtualFS：默认包含 note.txt */
+  const virtualFS = {
+    'note.txt': '我是张三'
+  };
+  function vfsInit(){
+    // 同步写进全局 VFS 的主目录与 Documents，保证 ls / cat / type 都能看到
+    [USER.home, USER.home+'/Documents'].forEach(dir=>{
+      vfsWrite('mac', vfsResolve('mac', dir, 'note.txt'), virtualFS['note.txt']);
+    });
+  }
+  vfsInit();
+  /* 取路径基名，用于 virtualFS 键 */
+  const baseName = p=>String(p).replace(/\\/g,'/').split('/').filter(Boolean).pop() || String(p);
+  function outLine(txt, cls=''){ const ln=el('div',{class:'ln'+(cls?' '+cls:'')},txt); out.appendChild(ln); out.scrollTop=out.scrollHeight; }
+  function runCmd(cmd){
+    window._termActive = Date.now();
+    cmd = cmd.trim();
+    outLine(promptEl.textContent+' '+cmd,'cmd');
+    if(!cmd) return;
+    history.push(cmd); hIdx=history.length;
+    const parts = cmd.split(/\s+/);
+    const c0 = parts[0].toLowerCase();
+    switch(c0){
+      case 'help':
+        outLine('可用命令：','ok');
+        outLine(' 文件系统：','help');
+        outLine('  ls [目录]              列出目录内容（真实 VFS）','ln');
+        outLine('  cd <目录>              切换目录，支持 .. 与 ~','ln');
+        outLine('  cd / cd ~              回到主目录 '+USER.home,'ln');
+        outLine('  pwd                    显示当前路径','ln');
+        outLine('  mkdir <目录名>         创建目录（可用 md）','ln');
+        outLine('  type <文件>            显示文件内容（cat 同义）','ln');
+        outLine('  echo 文本 > 文件       写入文件，>> 为追加','ln');
+        outLine(' 系统与应用：','help');
+        outLine('  whoami, date/time, history, clear, apps, open <应用>, exit','ln');
+        outLine('  ps [all], pcb <pid>, block <pid>, wake <pid>, kill <pid>','ln');
+        outLine('  mode manual|live, step, theme macos|win98, restart','ln');
+        break;
+      case 'clear': out.innerHTML=''; break;
+      case 'echo': {
+        const rd = splitRedirect(cmd);
+        if(rd){
+          const text = rd.body.replace(/^echo\s*/i,'').replace(/^"([\s\S]*)"$/, '$1');
+          const target = vfsResolve('mac', currentPath, rd.file);
+          const oldN = vfsGet('mac', target);
+          const old = rd.append ? ((oldN && oldN.type==='file' && oldN.content) || '') : '';
+          const r = vfsWrite('mac', target, old + text);
+          if(r.ok) virtualFS[baseName(rd.file)] = old + text;   // ★ 同步 virtualFS
+          outLine(' '+r.msg, r.ok?'ok':'err');
+        } else outLine(' '+cmd.replace(/^echo\s*/i,''),'ln');
+        break;
+      }
+      case 'pwd': outLine(' '+currentPath,'ln'); break;
+      case 'cd': {
+        const arg = parts.slice(1).join(' ');
+        const target = vfsResolve('mac', currentPath, arg);
+        const n = vfsGet('mac', target);
+        if(!n){ outLine(' cd: no such file or directory: '+(arg||'(空)'),'err'); break; }
+        if(n.type!=='dir'){ outLine(' cd: not a directory: '+arg,'err'); break; }
+        currentPath = target; updPrompt();
+        break;
+      }
+      case 'md':
+      case 'mkdir': {
+        const arg = parts.slice(1).join(' ');
+        if(!arg){ outLine(' 用法: mkdir <目录名>','warn'); break; }
+        const r = vfsMkdir('mac', vfsResolve('mac', currentPath, arg));
+        outLine(' '+r.msg, r.ok?'ok':'err');
+        break;
+      }
+      case 'type':
+      case 'cat': {
+        const arg = parts.slice(1).join(' ');
+        if(!arg){ outLine(' 用法: type <文件名>','warn'); break; }
+        let n = vfsGet('mac', vfsResolve('mac', currentPath, arg));
+        // ★ 兜底：virtualFS 里有同名条目则直接采用（并回写进 VFS）
+        if(!n && Object.prototype.hasOwnProperty.call(virtualFS, baseName(arg))){
+          vfsWrite('mac', vfsResolve('mac', currentPath, arg), virtualFS[baseName(arg)]);
+          n = vfsGet('mac', vfsResolve('mac', currentPath, arg));
+        }
+        if(!n){ outLine(' cat: '+arg+': No such file or directory','err'); break; }
+        if(n.type==='dir'){ outLine(' cat: '+arg+': Is a directory','err'); break; }
+        if(!n.content){ outLine(' （空文件）','warn'); break; }
+        n.content.split('\n').forEach(l=>outLine(' '+l,'ln'));
+        break;
+      }
+      case 'whoami': outLine(' '+WHOAMI(),'ok'); break;
+      case 'date':
+      case 'time': outLine(' '+new Date().toString(),'ln'); break;
+      case 'history':
+        history.forEach((h,i)=>outLine(' '+String(i+1).padStart(3,' ')+'  '+h,'ln'));
+        if(!history.length) outLine(' (空)','warn');
+        break;
+      case 'ls': {
+        const arg = parts.slice(1).join(' ');
+        const target = vfsResolve('mac', currentPath, arg);
+        const r = vfsList('mac', target);
+        if(!r){ outLine(' ls: '+(arg||'.')+': No such file or directory','err'); break; }
+        if(r.file){ outLine(' '+r.node.name,'ln'); break; }
+        const all = r.dirs.map(n=>n.name+'/').concat(r.files.map(n=>n.name));
+        if(!all.length){ outLine(' （空目录）','warn'); break; }
+        outLine(' '+all.join('   '),'ln');
+        outLine(' 共 '+r.dirs.length+' 个目录，'+r.files.length+' 个文件','help');
+        break;
+      }
+      case 'apps': outLine(' 已安装应用： Finder, Process Monitor, Calculator, Minesweeper, Terminal','ln'); break;
+      case 'open': {
+        const app = parts[1];
+        // 支持别名 paint=画图应用, game=mine, computer=calc
+        const alias = {game:'mine',computer:'calc',draw:'paint'};
+        const real = alias[app] || app;
+        if(['finder','pcb','calc','mine','term','paint'].includes(real)){ window.WM.open(real); outLine(' 已打开 '+real,'ok'); }
+        else outLine(' 未知应用：'+app+' (可用: finder|pcb|calc|mine|term|paint|game|computer|draw)','err');
+        break;
+      }
+      case 'theme':
+        if(parts[1]==='win98'){ switchOS('win98'); outLine(' 已切换到 Windows 98','ok'); }
+        else if(parts[1]==='macos'){ switchOS('macos'); outLine(' 已切换到 macOS','ok'); }
+        else outLine(' 用法: theme macos|win98','warn');
+        break;
+      case 'mode': {
+        const m = parts[1]==='manual'?'manual':(parts[1]==='live'?'live':null);
+        if(!m){ outLine(' 用法: mode manual|live','warn'); break; }
+        outLine(' '+PM.setMode(m),'ok');
+        break;
+      }
+      case 'step': outLine(' '+PM.step(),'ok'); break;
+      case 'ps': {
+        const all = parts[1]==='all';
+        outLine(' PID  TYPE       TITLE                     STATE    MEM    CPU_MS  CPU%','ok');
+        PM.psList().forEach(p=>{
+          outLine(` ${String(p.pid).padEnd(4)} ${p.type.padEnd(10)} ${p.title.padEnd(24).slice(0,24)} ${p.status.padEnd(8)} ${String(p.memKB).padEnd(5)}KB ${String(p.cpuMs).padEnd(6)}ms ${PM.cpuPct.toFixed(1)}%`,'ln');
+        });
+        if(!PM.psList().length) outLine(' (空)','warn');
+        if(all) outLine(`总内存: ${PM.totalMem()}KB  模式: ${PM.mode}  系统CPU%: ${PM.cpuPct.toFixed(1)}`,'ln');
+        break;
+      }
+      case 'pcb': {
+        const pid = parseInt(parts[1]);
+        const b = PM.pcb(pid);
+        if(!b){ outLine(' 未找到 PID '+parts[1],'err'); break; }
+        outLine(' ┌──── PROCESS CONTROL BLOCK ────┐','ok');
+        Object.entries(b).forEach(([k,v])=>outLine(' │ '+k.padEnd(10)+': '+v,'ln'));
+        outLine(' └─────────────────────────────┘','ok');
+        break;
+      }
+      case 'block': outLine(' '+PM.block(parseInt(parts[1])),'ok'); break;
+      case 'wake': outLine(' '+PM.wake(parseInt(parts[1])),'ok'); break;
+      case 'kill': {
+        const pid=parseInt(parts[1]);
+        let target=null; WM.windows.forEach((w)=>{ if(w.pid===pid) target=w; });
+        if(target){ const id=[...WM.windows.entries()].find(e=>e[1]===target)[0]; WM.close(id); outLine(' 已终止进程 '+pid,'ok'); }
+        else outLine(' 未找到 PID '+pid,'err');
+        break;
+      }
+      case 'exit':
+        WM.close(yip);
+        outLine(' 已退出终端','ok');
+        return;
+      case 'restart': outLine(' 模拟系统重启…','warn'); setTimeout(()=>location.reload(),800); break;
+      case 'sudo': outLine(' 权限不足（demo 模式）','err'); break;
+      default: outLine(' zsh: command not found: '+parts[0]+'  (输入 help 查看)','err');
+    }
+  }
+  input.addEventListener('keydown', e=>{
+    if(e.key==='Enter'){ runCmd(input.value); input.value=''; }
+    else if(e.key==='ArrowUp'){ if(hIdx>0){hIdx--;input.value=history[hIdx];} e.preventDefault(); }
+    else if(e.key==='ArrowDown'){ if(hIdx<history.length-1){hIdx++;input.value=history[hIdx];} else {hIdx=history.length;input.value='';} e.preventDefault(); }
+    else if(e.key==='l' && e.ctrlKey){ out.innerHTML=''; e.preventDefault(); }
+  });
+  outLine(' Last login: '+new Date().toString()+' on console','ln');
+  outLine(' Welcome to macOS Terminal Demo — '+USER.full+' ('+USER.name+')','ok');
+  outLine(' 当前目录: '+currentPath+'   （mkdir / cd / cat / echo > 均真实生效）','ln');
+  outLine(' 已载入默认文件: note.txt （内容：'+virtualFS['note.txt']+'）','ln');
+  outLine(' 输入 help 查看可用命令','ln');
+  input.focus();
+  out.addEventListener('click',()=>input.focus());
+}
+function buildTermWin(body, wm, yip, proc){
+  const root = el('div',{class:'term-w98'});
+  const menu = el('div',{class:'menu-w'},
+    el('span',{onclick:()=>showTip('文件菜单')},'文件'),
+    el('span',{onclick:()=>showTip('编辑菜单')},'编辑'),
+    el('span',{onclick:()=>showTip('查看菜单')},'查看'),
+    el('span',{onclick:()=>showTip('帮助菜单')},'帮助')
+  );
+  const out = el('div',{class:'term-body-w'});
+  const promptEl = el('span',{class:'prompt'},USER.name+'@'+USER.winHost+' C:\\WINDOWS>');
+  const inp = el('div',{class:'term-input-w'},
+    promptEl,
+    el('input',{type:'text',autocomplete:'off',spellcheck:false})
+  );
+  root.append(out, inp);
+  body.appendChild(root);
+  const wi = inp.querySelector('input');
+  let history=[], hIdx=-1;
+  /* ★ 真实当前路径：内部 C:/WINDOWS，展示 C:\WINDOWS */
+  let currentPath = vfsNorm('C:/WINDOWS');
+  function updPrompt(){
+    promptEl.textContent = USER.name+'@'+USER.winHost+' '+vfsShow('win',currentPath)+'>';
+  }
+  updPrompt();
+  function outLine(txt,cls=''){ const ln=el('div',{class:'ln'+(cls?' '+cls:'')},txt); out.appendChild(ln); out.scrollTop=out.scrollHeight; }
+  function run(cmd){
+    window._termActive = Date.now();
+    cmd=cmd.trim(); outLine(promptEl.textContent+cmd,'cmd');
+    if(!cmd) return;
+    history.push(cmd); hIdx=history.length;
+    const parts=cmd.split(/\s+/);
+    const c0=parts[0].toLowerCase();
+    switch(c0){
+        case 'help': case '?':
+          outLine('可用命令：','ok');
+          outLine('  DIR [路径]        - 列出目录内容（真实 VFS）','ln');
+          outLine('  CD <路径>         - 切换目录，支持 .. 与盘符 C:','ln');
+          outLine('  MD|MKDIR <目录名> - 创建目录（写入 virtualFS）','ln');
+          outLine('  TYPE <文件名>     - 显示文件内容（读取 virtualFS）','ln');
+          outLine('  ECHO 文本 > 文件  - 写入文件，>> 为追加写入','ln');
+          outLine('  CLS, VER, DATE, TIME, WHOAMI, HISTORY, EXIT','ln');
+          outLine('  OPEN <a>  打开应用 (finder|paint|pcb|computer|calc|mine|game|term)','ln');
+          outLine('  PS [ALL], PCB <pid>, BLOCK <pid>, WAKE <pid>, KILL <pid>','ln');
+          outLine('  MODE MANUAL|LIVE, STEP, THEME MACOS|WIN98, RESTART','ln');
+          break;
+        case 'cls': out.innerHTML=''; break;
+        case 'dir': {
+          const arg = (parts.length>1 && parts[1].toLowerCase()!=='/w') ? parts.slice(1).join(' ') : '';
+          const target = vfsResolve('win', currentPath, arg);
+          const r = vfsList('win', target);
+          if(!r){ outLine(' 无效的目录 - '+arg,'err'); break; }
+          if(r.file){ outLine(' '+r.node.name,'ln'); break; }
+          outLine(' 驱动器 C 中的卷是 MS-DOS_6','ln');
+          outLine(' 卷的序列号是 1A2B-3C4D','ln');
+          outLine('','ln');
+          outLine(' '+vfsShow('win',target)+' 的目录','ln');
+          outLine('','ln');
+          r.dirs.forEach(n=>outLine(' '+(n.name+'/').padEnd(16)+'<DIR>','ln'));
+          r.files.forEach(n=>outLine(' '+n.name.padEnd(16)+String(n.content.length).padStart(7)+' 字节','ln'));
+          outLine('              '+String(r.files.length).padStart(4)+' 个文件','ln');
+          outLine('              '+String(r.dirs.length).padStart(4)+' 个目录','ln');
+          break;
+        }
+        case 'cd': {
+          const arg = parts.slice(1).join(' ');
+          if(!arg){ outLine(' '+vfsShow('win',currentPath),'ln'); break; }
+          const target = vfsResolve('win', currentPath, arg);
+          const n = vfsGet('win', target);
+          if(!n){ outLine(' 无效的目录 - '+arg,'err'); break; }
+          if(n.type!=='dir'){ outLine(' '+arg+' 不是目录','err'); break; }
+          currentPath = target; updPrompt();
+          break;
+        }
+        case 'md': case 'mkdir': {
+          const arg = parts.slice(1).join(' ');
+          if(!arg){ outLine(' 用法: MD <目录名>','warn'); break; }
+          const r = vfsMkdir('win', vfsResolve('win', currentPath, arg));
+          outLine(' '+r.msg, r.ok?'ok':'err');
+          break;
+        }
+        case 'type': {
+          const arg = parts.slice(1).join(' ');
+          if(!arg){ outLine(' 用法: TYPE <文件名>','warn'); break; }
+          const n = vfsGet('win', vfsResolve('win', currentPath, arg));
+          if(!n){ outLine(' 找不到文件 - '+arg,'err'); break; }
+          if(n.type==='dir'){ outLine(' '+arg+' 是目录，无法 TYPE','err'); break; }
+          if(!n.content){ outLine(' （'+vfsShow('win',vfsResolve('win',currentPath,arg))+' 是空文件）','warn'); break; }
+          n.content.split('\n').forEach(l=>outLine(' '+l,'ln'));
+          break;
+        }
+        case 'echo': {
+          const rd = splitRedirect(cmd);
+          if(rd){
+            const text = rd.body.replace(/^echo\s*/i,'').replace(/^"([\s\S]*)"$/, '$1');
+            const target = vfsResolve('win', currentPath, rd.file);
+            const oldN = vfsGet('win', target);
+            const old = rd.append ? ((oldN && oldN.type==='file' && oldN.content) || '') : '';
+            const r = vfsWrite('win', target, old + text);
+            outLine(' '+r.msg, r.ok?'ok':'err');
+          } else outLine(' '+cmd.replace(/^echo\s*/i,''),'ln');
+          break;
+        }
+        case 'date': case 'time': outLine(' '+new Date().toString(),'ln'); break;
+        case 'ver': outLine(' Windows 98 [Version 4.10.1998]','ok'); break;
+        case 'whoami': outLine(' '+WHOAMI(),'ok'); break;
+        case 'apps': outLine(' 已安装: FINDER, PCB, CALC, MINE, TERM','ln'); break;
+        case 'history':
+          history.forEach((h,i)=>outLine(' '+String(i+1).padStart(3,' ')+'  '+h,'ln'));
+          if(!history.length) outLine(' (空)','warn');
+          break;
+        case 'open': {
+          const app=parts[1];
+          const alias={draw:'paint',game:'mine',computer:'calc'};
+          const real=alias[app]||app;
+          if(['finder','pcb','calc','mine','term','paint'].includes(real)){ window.WM.open(real); outLine(' 已打开 '+real,'ok'); }
+          else outLine(' 错误: 未找到 '+app+' (可用: finder|paint|pcb|computer|calc|mine|game|term|draw)','err');
+          break;
+        }
+        case 'mode': {
+          const m=parts[1]==='manual'?'manual':(parts[1]==='live'?'live':null);
+          if(!m){ outLine(' 用法: MODE MANUAL|LIVE','warn'); break; }
+          outLine(' '+PM.setMode(m),'ok'); break;
+        }
+        case 'step': outLine(' '+PM.step(),'ok'); break;
+        case 'ps': {
+          outLine(' PID  TYPE       TITLE                     STATE    MEM    CPU_MS  CPU%','ok');
+          PM.psList().forEach(p=>{
+            outLine(` ${String(p.pid).padEnd(4)} ${p.type.padEnd(10)} ${p.title.padEnd(24).slice(0,24)} ${p.status.padEnd(8)} ${String(p.memKB).padEnd(5)}KB ${String(p.cpuMs).padEnd(6)}ms ${PM.cpuPct.toFixed(1)}%`,'ln');
+          });
+          if(!PM.psList().length) outLine(' (空)','warn');
+          if(parts[1] && parts[1].toLowerCase()==='all') outLine(`总内存: ${PM.totalMem()}KB  模式: ${PM.mode}  系统CPU%: ${PM.cpuPct.toFixed(1)}`,'ln');
+          break;
+        }
+        case 'pcb': {
+          const b=PM.pcb(parseInt(parts[1]));
+          if(!b){ outLine(' 未找到 PID '+parts[1],'err'); break; }
+          outLine(' ┌──── PROCESS CONTROL BLOCK ────┐','ok');
+          Object.entries(b).forEach(([k,v])=>outLine(' │ '+k.padEnd(10)+': '+v,'ln'));
+          outLine(' └─────────────────────────────┘','ok');
+          break;
+        }
+        case 'block': outLine(' '+PM.block(parseInt(parts[1])),'ok'); break;
+        case 'wake': outLine(' '+PM.wake(parseInt(parts[1])),'ok'); break;
+        case 'kill': {
+          const pid=parseInt(parts[1]); let target=null;
+          WM.windows.forEach((w)=>{ if(w.pid===pid) target=w; });
+          if(target){ const id=[...WM.windows.entries()].find(e=>e[1]===target)[0]; WM.close(id); outLine(' 已终止 '+pid,'ok'); }
+          else outLine(' 未找到 PID '+pid,'err');
+          break;
+        }
+        case 'theme':
+          if(parts[1]==='macos'||parts[1]==='m'){ switchOS('macos'); outLine(' 已切换 macOS','ok'); }
+          else if(parts[1]==='win98'||parts[1]==='w'){ switchOS('win98'); outLine(' 已切换 Windows 98','ok'); }
+          else outLine(' 用法: THEME [MACOS|WIN98]','warn');
+          break;
+        case 'exit':
+          WM.close(yip);
+          return;
+        case 'restart': outLine(' 模拟系统重启…','warn'); setTimeout(()=>location.reload(),800); break;
+        default: outLine(' 错误的命令或文件名: '+parts[0]+'  (输入 HELP)','err');
+      }
+  }
+  wi.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){ run(wi.value); wi.value=''; }
+    else if(e.key==='ArrowUp'){ if(hIdx>0){hIdx--;wi.value=history[hIdx];} e.preventDefault(); }
+    else if(e.key==='ArrowDown'){ if(hIdx<history.length-1){hIdx++;wi.value=history[hIdx];} else {hIdx=history.length;wi.value='';} e.preventDefault(); }
+  });
+  outLine('Microsoft(R) MS-DOS(R) Version 6.22','ok');
+  outLine('(C)Copyright Microsoft Corp 1981-1994.','help');
+  outLine(' 当前用户: '+USER.name+'@'+USER.winHost+'  主目录: '+USER.winHome,'ln');
+  outLine(' 当前目录: '+vfsShow('win',currentPath)+'   （MD / CD / TYPE / ECHO > 均真实生效）','ln');
+  outLine('  输入 HELP 查看命令','ln');
+  wi.focus();
+  out.addEventListener('click',()=>wi.focus());
+}
+
+/* ===================================================================
+   GLOBAL APP / MOUNT
+   =================================================================== */
+let currentOS = 'macos';
+const WM = new WindowManager();
+window.WM = WM;
+
+function updateClock(){
+  const d = new Date();
+  const days = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+  const t = d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
+  const mc = $('#mac-clock'); if(mc) mc.textContent = days[d.getDay()]+' '+t;
+  const wc = $('#w98-clock'); if(wc) wc.textContent = t;
+}
+setInterval(updateClock, 30000);
+updateClock();
+
+function initMac(){
+  // ★ 顶部托盘用户名：单一数据源 USER
+  const mun = $('#mac-user-name');
+  if(mun){ mun.textContent = USER.name; }
+  const mu = $('#mac-user');
+  if(mu){ mu.title = '当前用户：'+USER.full+' ('+USER.name+')'; }
+
+  const desk = $('#mac-desktop-icons');
+  // ★ 修复：每个桌面图标使用不同的 SVG icon + 不同的 path，避免全部打开根目录
+  const macDesktopIcons = [
+    {name:'Macintosh HD', icon:'i-mac-harddisk',    app:'finder', path:''},
+    {name:'Documents',    icon:'i-mac-folder-docs', app:'finder', path:'/Documents'},
+    {name:'Applications', icon:'i-mac-folder-app',  app:'finder', path:'/Applications'},
+    {name:'Downloads',    icon:'i-mac-folder-dl',   app:'finder', path:'/Downloads'},
+  ];
+  macDesktopIcons.forEach(it=>{
+    const i = document.createElement('div');
+    i.className = 'mac-icon';
+    i.dataset.app = it.app;
+    i.dataset.name = it.name;
+    i.dataset.path = it.path;
+
+    // ★ 自定义单击/双击检测：单击只选中，双击才打开（不依赖浏览器 dblclick 事件）
+    let lastClickAt = 0;
+    i.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const now = Date.now();
+      if(now - lastClickAt < 350){
+        // 自定义双击：清除单击状态，立即打开
+        lastClickAt = 0;
+        console.log('[icon] mac dblclick:', it.name, '→', it.app, it.path);
+        try { WM.open(it.app, {path: it.path}); showTip('正在打开：'+it.name); }
+        catch(err){ console.error(err); showTip('打开失败：'+err.message); }
+      } else {
+        // 单击：选中（立即生效，不延迟）
+        lastClickAt = now;
+        $$('.mac-icon').forEach(x=>x.classList.remove('selected'));
+        i.classList.add('selected');
+      }
+    });
+    const img = document.createElement('div');
+    img.className = 'icon-img';
+    img.innerHTML = `<svg width="64" height="64"><use href="#${it.icon}"/></svg>`;
+    const lbl = document.createElement('div');
+    lbl.className = 'icon-label';
+    lbl.textContent = it.name;
+    i.appendChild(img);
+    i.appendChild(lbl);
+    desk.appendChild(i);
+  });
+  const dock = $('#mac-dock');
+  // ★ 加入画图应用
+  ['finder','mac-calc','mac-mine','mac-term','mac-pcb','mac-paint'].forEach((it,i)=>{
+    const apps = ['i-finder','i-mac-calc','i-mac-mine','i-mac-term','i-mac-pcb','i-mac-paint'];
+    const ids = ['finder','calc','mine','term','pcb','paint'];
+    const sym = apps[i]; const id=ids[i];
+    // ★ 关键修复：Dock 图标不再是"盲开新窗口"，而是 WM.dockClick(id) 智能路由
+    //    - 有最小化窗口 → 恢复
+    //    - 有打开窗口 → 聚焦
+    //    - 无窗口 → 新开
+    //    同时登记 dock DOM 到 WM.dockItems，syncDock() 会根据 .has-minimized 状态加圆点指示
+    const d = el('div',{class:'dock-item', onclick:()=>WM.dockClick(id)},
+      el('div',{class:'tooltip'}, APPS[id].title),
+      el('svg',{width:'54',height:'54',innerHTML:'<use href="#'+sym+'"/>'})
+    );
+    dock.appendChild(d);
+    WM.dockItems[id] = d;   // 注册到 WM，syncDock 后续会更新
+    if(i===5){
+      dock.appendChild(el('div',{class:'dock-sep'}));
+      dock.appendChild(el('div',{class:'dock-item', onclick:()=>showTip('回收站为空')},
+        el('div',{class:'tooltip'},'回收站'),
+        el('svg',{width:'54',height:'54',innerHTML:`<rect x='8' y='10' width='38' height='34' rx='6' fill='none' stroke='#aaa' stroke-width='2'/><path d='M14 18 L40 18 M20 26 L34 26 M20 32 L34 32' stroke='#aaa' stroke-width='1.5'/>`})
+      ));
+    }
+  });
+  // macOS menu events
+  $('#mac-apple').onclick = (e)=>{
+    showDropdown([
+      {label:'关于本机', action:()=>showDialog('mac', '关于本机','macOS Ventura 13.5 (仿真版)\nM2 Pro 芯片 (仿真)\n内存 16GB')},
+      {label:'系统偏好设置…', action:()=>showTip('系统偏好设置 - 功能开发中')},
+      {sep:true},
+      {label:'App Store…', action:()=>showTip('App Store - 功能开发中')},
+      {label:'最近使用', disabled:true},
+      {label:'强制退出…', shortcut:'⌥⌘⎋', action:()=>showDialog('mac','强制退出','选择要强制退出的应用：\n· Finder\n· Terminal')},
+      {sep:true},
+      {label:'睡眠', action:()=>showTip('系统即将进入睡眠')},
+      {label:'重新启动…', action:()=>{ if(confirm('确定要重新启动吗？')){ setTimeout(()=>location.reload(),500); } }},
+      {label:'关机…', action:()=>{ if(confirm('确定要关机吗？')){ showTip('已发送关机信号'); } else showTip('已取消'); }},
+    ], e);
+  };
+  $('#mac-menubar').querySelectorAll('.menu-item[data-menu]').forEach(m=>{
+    m.onclick = (e)=>{
+      const menus_ = {
+        file: [
+          {label:'新建访达窗口', shortcut:'⌘N', action:()=>WM.open('finder')},
+          {label:'新建文件夹', shortcut:'⇧⌘N', action:()=>showTip('已新建文件夹')},
+          {label:'打开', shortcut:'⌘O', action:()=>WM.open('finder')},
+          {sep:true},
+          {label:'关闭窗口', shortcut:'⌘W', action:()=>showTip('已关闭当前窗口')},
+          {label:'打印', shortcut:'⌘P', disabled:true},
+        ],
+        edit: [
+          {label:'撤销', shortcut:'⌘Z', action:()=>showTip('已撤销')},
+          {label:'重做', shortcut:'⇧⌘Z', action:()=>showTip('已重做')},
+          {sep:true},
+          {label:'剪切', shortcut:'⌘X', action:()=>showTip('已剪切')},
+          {label:'复制', shortcut:'⌘C', action:()=>showTip('已复制')},
+          {label:'粘贴', shortcut:'⌘V', action:()=>showTip('已粘贴')},
+          {label:'全选', shortcut:'⌘A', action:()=>showTip('已全选')},
+        ],
+        view: [
+          {label:'作为图标', action:()=>showTip('切换为图标视图')},
+          {label:'作为列表', action:()=>showTip('切换为列表视图')},
+          {label:'作为分栏', action:()=>showTip('切换为分栏视图')},
+          {sep:true},
+          {label:'显示路径栏', action:()=>showTip('已切换显示路径栏')},
+          {label:'显示状态栏', action:()=>showTip('已切换显示状态栏')},
+        ],
+        go: [
+          {label:'应用程序', shortcut:'⇧⌘A', action:()=>WM.open('finder')},
+          {label:'文稿', shortcut:'⇧⌘O', action:()=>WM.open('finder')},
+          {label:'下载', shortcut:'⌥⌘L', action:()=>WM.open('finder')},
+          {label:'桌面', shortcut:'⇧⌘D', action:()=>showTip('已切换到桌面')},
+          {sep:true},
+          {label:'连接到服务器', shortcut:'⌘K', action:()=>showDialog('mac','连接到服务器','服务器地址: smb://example.com\\n用户: guest\\n连接中…')},
+        ],
+        window: [
+          {label:'最小化', shortcut:'⌘M', action:()=>{ WM.windows.forEach((w,id)=>w.minimized||WM.minimize(id)); }},
+          {label:'缩放', action:()=>{ let any=false; WM.windows.forEach((w,id)=>{ if(!w.minimized){WM.toggleMax(id); any=true;} }); if(!any) showTip('没有可缩放的窗口'); }},
+          {sep:true},
+          {label:'前置所有窗口', action:()=>showTip('所有窗口已前置')},
+          {label:'访达窗口', action:()=>WM.open('finder')},
+        ],
+        help: [
+          {label:'macOS 帮助', action:()=>showDialog('mac','macOS 帮助','欢迎使用 macOS 仿真环境！\n\n可用操作：\n· 双击桌面图标 / Dock 图标 打开应用\n· 拖动窗口标题栏移动窗口\n· 点击红/黄/绿按钮关闭/最小化/最大化\n· 顶部菜单栏可访问完整功能')},
+          {label:'键盘快捷键', action:()=>showDialog('mac','键盘快捷键','⌘N 新建\n⌘O 打开\n⌘W 关闭\n⌘Q 退出\n⌘C/V/X 复制粘贴剪切\n⌘Z 撤销\n⌘M 最小化')},
+        ]
+      };
+      showDropdown(menus_[m.dataset.menu] || [{label:'功能开发中', disabled:true}], e);
+    };
+  });
+  $('#mac-search').onclick = (e)=>showDropdown([
+    {label:'搜索', action:()=>WM.open('finder')},
+    {sep:true},
+    {label:'Siri', action:()=>showDialog('mac','Siri','你好，有什么可以帮你的？')},
+  ], e);
+  $('#mac-wifi').onclick = (e)=>showDropdown([
+    {label:'Wi-Fi：已连接', disabled:true},
+    {label:'ChenJiao-5G ✓', action:()=>showTip('已切换到 ChenJiao-5G')},
+    {label:'Lab-WiFi', action:()=>showTip('已切换到 Lab-WiFi')},
+    {sep:true},
+    {label:'网络偏好设置…', action:()=>showTip('网络偏好设置')},
+  ], e);
+  $('#mac-clock').onclick = (e)=>showDropdown([
+    {label:new Date().toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric',weekday:'long'}), disabled:true},
+    {sep:true},
+    {label:'打开日历…', action:()=>showTip('日历应用 - 功能开发中')},
+    {label:'打开提醒事项…', action:()=>showTip('提醒事项 - 功能开发中')},
+  ], e);
+  $('#mac-battery').onclick = (e)=>showDropdown([
+    {label:'电量：87%', disabled:true},
+    {label:'充电方式：电源适配器', disabled:true},
+    {sep:true},
+    {label:'节能选项…', action:()=>showTip('节能选项')},
+  ], e);
+  $('#mac-menubar .menu-item.app').onclick = ()=>WM.open('finder');
+}
+
+function initWin98(){
+  // ★ 开始菜单顶部用户名条：单一数据源 USER
+  const av=$('#sm-user-av'), fu=$('#sm-user-full'), nm=$('#sm-user-name');
+  if(av) av.textContent = USER.full.slice(0,1);
+  if(fu) fu.textContent = USER.full;
+  if(nm) nm.textContent = USER.name+'@'+USER.winHost;
+
+  const desk = $('#w98-desktop-icons');
+  // ★ 修复：加入画图应用图标 + 资源管理器指向 C 盘根目录、Program Files 目录等
+  const wins = [
+    {n:'我的电脑',     i:'i-w98-mycomputer', x:20,  y:20,  app:'finder', path:''},
+    {n:'Program Files',i:'i-w98-folder',     x:20,  y:130, app:'finder', path:'/Program Files'},
+    {n:'PCB 监控',     i:'i-w98-pcb',        x:20,  y:240, app:'pcb'},
+    {n:'计算器',       i:'i-w98-calc',       x:110, y:20,  app:'mini-calc'},
+    {n:'扫雷',         i:'i-w98-mine',       x:110, y:130, app:'mine'},
+    {n:'画图',         i:'i-w98-paint',      x:110, y:240, app:'paint'},
+    {n:'回收站',       i:'i-w98-recycle',    x:200, y:20,  app:'recycle'},
+    {n:'MS-DOS',       i:'i-w98-bat',        x:200, y:130, app:'term'},
+    {n:'README',       i:'i-w98-txt',        x:200, y:240},
+  ];
+  // 统一桌面图标启动逻辑
+  function openW98DesktopApp(w){
+    if(w.app==='finder') WM.open('finder', {path: w.path || ''});
+    else if(w.app==='pcb') WM.open('pcb');
+    else if(w.app==='mine') WM.open('mine');
+    else if(w.app==='term') WM.open('term');
+    else if(w.app==='paint') WM.open('paint');
+    else if(w.app==='mini-calc') WM.open('calc');
+    else if(w.app==='recycle') showDialog('w98','回收站','回收站是空的。\n没有需要恢复的文件。',[{label:'确定',primary:true,action:()=>closeDialog()}]);
+    else showDialog('w98', w.n, '功能开发中：打开 '+w.n, [{label:'确定',primary:true,action:()=>closeDialog()}]);
+  }
+  // 桌面空白点击清空选中
+  $('#win98-desktop').addEventListener('click', (e)=>{
+    if(e.target.id==='win98-desktop' || e.target.id==='w98-desktop-icons'){
+      $$('#w98-desktop-icons .win98-icon').forEach(x=>x.classList.remove('selected'));
+    }
+  });
+  // macOS 桌面空白点击清空选中
+  $('#macos-desktop').addEventListener('click', (e)=>{
+    if(e.target.id==='macos-desktop' || e.target.id==='mac-desktop-icons' || e.target.id==='mac-icon-grid' || e.target.classList.contains('mac-icon-grid')){
+      $$('.mac-icon').forEach(x=>x.classList.remove('selected'));
+    }
+  });
+  wins.forEach(w=>{
+    const ic = document.createElement('div');
+    ic.className = 'win98-icon';
+    ic.style.cssText = `left:${w.x}px;top:${w.y}px`;
+    ic.dataset.app = w.app || '';
+    ic.dataset.name = w.n;
+    // ★ 自定义单击/双击检测
+    let lastClickAt = 0;
+    ic.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const now = Date.now();
+      if(now - lastClickAt < 350){
+        // 自定义双击：清除单击状态，立即打开
+        lastClickAt = 0;
+        console.log('[icon] win98 dblclick:', w.n, '→', w.app, w.path||'');
+        try { openW98DesktopApp(w); showTip('正在打开：'+w.n); }
+        catch(err){ console.error(err); showTip('打开失败：'+err.message); }
+      } else {
+        // 单击：选中
+        lastClickAt = now;
+        $$('#w98-desktop-icons .win98-icon').forEach(x=>x.classList.remove('selected'));
+        ic.classList.add('selected');
+      }
+    });
+    const img = document.createElement('div');
+    img.className = 'win98-icon-img';
+    img.innerHTML = `<svg width="32" height="32"><use href="#${w.i}"/></svg>`;
+    const lbl = document.createElement('div');
+    lbl.className = 'win98-icon-label';
+    lbl.textContent = w.n;
+    ic.appendChild(img);
+    ic.appendChild(lbl);
+    desk.appendChild(ic);
+  });
+  $('#w98-start-btn').onclick = (e)=>{
+    e.stopPropagation();
+    $('#start-menu').classList.toggle('open');
+  };
+  document.addEventListener('click', (e)=>{
+    if(!e.target.closest('#start-menu') && !e.target.closest('#w98-start-btn')){
+      $('#start-menu').classList.remove('open');
+    }
+  });
+  $$('#start-menu .sm-item').forEach(item=>{
+    item.onclick = ()=>{
+      const app = item.dataset.app;
+      const action = item.dataset.menuAction;
+      $('#start-menu').classList.remove('open');
+      if(app){
+        if(app==='finder') WM.open('finder');
+        else if(app==='pcb') WM.open('pcb');
+        else if(app==='mine') WM.open('mine');
+        else if(app==='term') WM.open('term');
+        else if(app==='calc') WM.open('calc');
+      } else if(action==='settings'){
+        showDialog('w98','设置','Windows 98 控制面板 - 功能开发中',[{label:'确定',primary:true,action:()=>closeDialog()}]);
+      } else if(action==='about'){
+        showDialog('w98','关于 Windows 98','Windows 98 仿真版 v1.0\n单页面 Web 应用\n开发者：陈艳娇',[{label:'确定',primary:true,action:()=>closeDialog()}]);
+      } else if(action==='switch'){
+        switchOS('macos');
+      }
+    };
+  });
+  // Win98 double click detection for icons (desktop)
+  let lastClick = null;
+  $$('#w98-desktop-icons .win98-icon').forEach(ic=>{
+    let t = null;
+    ic.addEventListener('click', ()=>{
+      $$('#w98-desktop-icons .win98-icon').forEach(x=>x.classList.remove('selected'));
+      ic.classList.add('selected');
+    });
+  });
+}
+
+/* ----- Dropdown menus ----- */
+let curDropdown=null;
+function showDropdown(items, evt){
+  closeDropdown();
+  const menu = el('div',{class:'mac-dropdown'});
+  items.forEach(it=>{
+    if(it.sep){ menu.appendChild(el('div',{class:'dd-sep'})); return; }
+    const d = el('div',{class:'dd-item'+(it.disabled?' disabled':'')},
+      el('span',{},it.label),
+      it.shortcut?el('span',{class:'dd-shortcut'},it.shortcut):null
+    );
+    if(it.action) d.onclick = ()=>{ closeDropdown(); it.action(); };
+    menu.appendChild(d);
+  });
+  document.body.appendChild(menu);
+  const r = evt.currentTarget.getBoundingClientRect();
+  menu.style.left = r.left+'px';
+  menu.style.top = (r.bottom+2)+'px';
+  curDropdown = menu;
+  setTimeout(()=>{
+    document.addEventListener('click', closeDropdownOnce, {once:true});
+  }, 0);
+}
+function closeDropdown(){ if(curDropdown){curDropdown.remove();curDropdown=null;} }
+function closeDropdownOnce(){ closeDropdown(); }
+/* Dialog */
+function showDialog(style, title, msg, btns){
+  const o = $('#dialog-overlay');
+  o.innerHTML='';
+  let dlg;
+  if(style==='mac'){
+    dlg = el('div',{class:'mac-dialog'},
+      el('h3',{},title),
+      el('p',{},msg),
+      el('div',{class:'actions'},
+        ...(btns||[{label:'好',primary:true}]).map(b=>{
+          return el('button',{class:b.primary?'':'secondary', onclick:()=>{ closeDialog(); b.action&&b.action(); }}, b.label||'确定');
+        })
+      )
+    );
+    if(!btns){
+      dlg.querySelector('.actions').appendChild(el('button',{onclick:closeDialog},'好'));
+    }
+  } else {
+    dlg = el('div',{class:'w98-dialog'},
+      el('div',{class:'title'},
+        el('span',{},title),
+        el('span',{class:'x',onclick:closeDialog},'r'),
+      ),
+      el('div',{class:'body'}, msg),
+      el('div',{class:'actions'},
+        ...(btns||[{label:'确定',primary:true}]).map(b=>{
+          return el('button',{onclick:()=>{ closeDialog(); b.action&&b.action(); }}, b.label||'确定');
+        })
+      )
+    );
+  }
+  o.appendChild(dlg);
+  o.classList.add('open');
+}
+function closeDialog(){ $('#dialog-overlay').classList.remove('open'); $('#dialog-overlay').innerHTML=''; }
+
+/* ----- OS switching ----- */
+function switchOS(os){
+  currentOS = os;
+  $$('.desktop').forEach(d=>d.classList.remove('active'));
+  $('#'+os+'-desktop').classList.add('active');
+  $$('#os-switcher .tab').forEach(t=>t.classList.toggle('active', t.dataset.os===os));
+  // 双系统独立: 切换系统时暂停未显示桌面的自动演示，避免 CPU 累积
+  // 通过 ProcessManager 的 mode 切换实现：manual 冻结 tick（保留 cpuMs/memKB），
+  // 切回原 OS 时再次恢复 live。
+  if(os==='win98'){ PM.setMode('manual'); PM._pausedByOS = true; }
+  else if(os==='macos'){ PM.setMode('live'); PM._pausedByOS = false; }
+  showTip('已切换到 '+(os==='macos'?'macOS':'Windows 98')+' 桌面');
+}
+/* 浏览器标签页隐藏时也暂停演示 */
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){ PM.setMode('manual'); PM._pausedByVisibility = true; }
+  else { if(!PM._pausedByOS) PM.setMode('live'); PM._pausedByVisibility = false; }
+});
+$$('#os-switcher .tab').forEach(t=>{
+  t.onclick = ()=>switchOS(t.dataset.os);
+});
+
+/* ----- Boot ----- */
+initMac();
+initWin98();
+
+</script>
+
+</body>
+</html>
